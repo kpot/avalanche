@@ -1,0 +1,3 @@
+[submodule "libs/CLBlast"]
+	path = libs/CLBlast
+	url = https://github.com/CNugteren/CLBlast.git
