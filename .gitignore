@@ -2,5 +2,7 @@
 __pycache__/
 dist/
 .eggs/
+*.egg-info/
 tmp/
 cmake-build-debug/
+build/

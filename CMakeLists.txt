@@ -13,6 +13,7 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(OpenCL REQUIRED)
 
 set(BUILD_SHARED_LIBS OFF)
+add_subdirectory(libs/pybind11)
 add_subdirectory(libs/CLBlast EXCLUDE_FROM_ALL)
 
 set(USE_OPENCL ON)
@@ -40,7 +41,7 @@ foreach(INPUT_FILE ${NOT_COMPILED_RESOURCES})
 endforeach()
 add_custom_target(avalanche_kernels SOURCES ${COMPILED_RESOURCES})
 
-add_library(avalanche
+add_library(avalanche_static STATIC
         src/avalanche/CLMemoryManager.cpp
         src/avalanche/CLBuffer.cpp
         src/avalanche/CLBufferPool.cpp
@@ -62,20 +63,20 @@ add_library(avalanche
         src/avalanche/math_ops/MatMul.cpp
         src/avalanche/math_ops/const_transformation.cpp
         src/avalanche/math_ops/reductions.cpp)
-target_compile_features(avalanche PRIVATE cxx_std_14)
-target_link_libraries(avalanche
+target_compile_features(avalanche_static PRIVATE cxx_std_14)
+target_link_libraries(avalanche_static
         PUBLIC ${OpenCL_LIBRARY} PRIVATE clblast)
-target_include_directories(avalanche
+target_include_directories(avalanche_static
         PUBLIC libs/cl_crossplatform include ${OpenCL_INCLUDE_DIRS})
-target_include_directories(avalanche
+target_include_directories(avalanche_static
         PUBLIC SYSTEM libs/cl_crossplatform)
-target_include_directories(avalanche
+target_include_directories(avalanche_static
         PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
 
-target_compile_definitions(avalanche PUBLIC ${OPENCL_REQUIRED_DEFINITIONS})
+target_compile_definitions(avalanche_static PUBLIC ${OPENCL_REQUIRED_DEFINITIONS})
 # Allows to link with OpenCL without pointing to a specific SDK
-set_target_properties(avalanche PROPERTIES SKIP_BUILD_RPATH ON)
-add_dependencies(avalanche avalanche_kernels)
+set_target_properties(avalanche_static PROPERTIES SKIP_BUILD_RPATH ON)
+add_dependencies(avalanche_static avalanche_kernels)
 
 
 if(BUILD_TESTING)
@@ -93,7 +94,7 @@ if(BUILD_TESTING)
         target_compile_features(${TARGET} PRIVATE cxx_std_14)
         target_include_directories(${TARGET} PRIVATE libs/Catch2)
         target_include_directories(${TARGET} PRIVATE ${TVM_INCLUDE_DIRS})
-        target_link_libraries(${TARGET} PRIVATE avalanche)
+        target_link_libraries(${TARGET} PRIVATE avalanche_static)
         # Allows to link with OpenCL without pointing to a specific SDK
         set_target_properties(${TARGET} PROPERTIES SKIP_BUILD_RPATH ON)
         add_test(NAME ${TARGET} COMMAND ${TARGET})
@@ -104,3 +105,7 @@ if(BUILD_TESTING)
     target_include_directories(test_opencl_libraries
             PUBLIC libs/cl_crossplatform include ${OpenCL_INCLUDE_DIRS})
 endif()
+
+pybind11_add_module(pyvalanche src/avalanche/python_binding.cpp)
+target_compile_features(pyvalanche PRIVATE cxx_std_14)
+target_link_libraries(pyvalanche PRIVATE ${OpenCL_LIBRARY} clblast avalanche_static)
