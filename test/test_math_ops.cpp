@@ -686,11 +686,6 @@ TEST_CASE("Checking automatic derivations (backprop)") {
         verify_derivatives<float>(context, {inputs, weights}, output, 0.05);
     }
 
-}
-
-// FIXME: Relocate working tests
-TEST_CASE("Broken thing") {
-    using namespace avalanche;
     SECTION("Reshape") {
         auto data = Variable::make("data", {1, 3}, ArrayType::float32);
         auto output = FU<Reshape>(F<Exp>(data), Shape({3, 1}));
@@ -735,9 +730,41 @@ TEST_CASE("Broken thing") {
         verify_derivatives<float>(context, {data}, output, 0.05);
     }
 
+    SECTION("Derivatives of broadcasted subtraction #2") {
+        auto data1 = Variable::make("data1", {3, 2}, ArrayType::float32);
+        auto data2 = Variable::make("data2", {3, 1}, ArrayType::float32);
+        auto output = data1 - data2;
+        auto context = Context::make_for_device(0);
+        context->init<float>(
+            data1,
+            {0.0f, 1.0f, 1.0f, 2.0f, 2.0f, 3.0f},
+            data1->shape());
+        context->init<float>(
+            data2,
+            {1.0f, 2.0f, 3.0f},
+            data2->shape());
+        verify_derivatives<float>(context, {data1, data2}, output, 0.05);
+    }
+
+    SECTION("Derivatives of broadcasted addition #2") {
+        auto data1 = Variable::make("data1", {3, 2}, ArrayType::float32);
+        auto data2 = Variable::make("data2", {3, 1}, ArrayType::float32);
+        auto output = data1 + data2;
+        auto context = Context::make_for_device(0);
+        context->init<float>(
+            data1,
+            {0.0f, 1.0f, 1.0f, 2.0f, 2.0f, 3.0f},
+            data1->shape());
+        context->init<float>(
+            data2,
+            {1.0f, 2.0f, 3.0f},
+            data2->shape());
+        verify_derivatives<float>(context, {data1, data2}, output, 0.05);
+    }
+
     SECTION("Derivatives of broadcasted division") {
-        auto data1 = Variable::make("data", {3, 2}, ArrayType::float32);
-        auto data2 = Variable::make("data", {3, 1}, ArrayType::float32);
+        auto data1 = Variable::make("data1", {3, 2}, ArrayType::float32);
+        auto data2 = Variable::make("data2", {3, 1}, ArrayType::float32);
         auto output = data1 / data2;
         auto context = Context::make_for_device(0);
         context->init<float>(
@@ -752,8 +779,8 @@ TEST_CASE("Broken thing") {
     }
 
     SECTION("Derivatives of broadcasted multiplication") {
-        auto data1 = Variable::make("data", {3, 2}, ArrayType::float32);
-        auto data2 = Variable::make("data", {3, 1}, ArrayType::float32);
+        auto data1 = Variable::make("data1", {3, 2}, ArrayType::float32);
+        auto data2 = Variable::make("data2", {3, 1}, ArrayType::float32);
         auto output = data1 * data2;
         auto context = Context::make_for_device(0);
         context->init<float>(
