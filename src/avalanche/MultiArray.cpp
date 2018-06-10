@@ -23,8 +23,7 @@ void MultiArray::set_completion_event(cl_event event) {
 }
 
 MultiArrayRef MultiArray::ref_copy() {
-    auto result = std::shared_ptr<MultiArray>(
-        new MultiArray(_buffer->pool(), _shape, _dtype));
+    auto result = MultiArray::make(_buffer->pool(), _shape, _dtype);
     cl::Event ready_event;
     _buffer->pool()->cl_queue().enqueueCopyBuffer(
         // waits until current buffer is ready

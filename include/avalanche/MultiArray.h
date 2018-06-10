@@ -29,53 +29,26 @@ using ArrayRefList = std::vector<MultiArrayRef >;
  */
 class MultiArray {
 public:
-    MultiArray(
-            const CLBufferRef &buffer,
-            const Shape &shape,
-            const ArrayType dtype)
-        : _buffer{buffer},
-          _shape{shape},
-          _dtype{dtype}
-    {}
 
-    MultiArray(BufferPoolRef device_pool, Shape shape, ArrayType dtype)
-        : MultiArray(
-            device_pool->reserve_buffer(array_type_size(dtype) * shape.size()),
-            shape,
-            dtype)
-    {}
-
-    MultiArray(DeviceIndex device_idx, Shape shape, ArrayType dtype)
-        :MultiArray(
-            CLMemoryManager::get_default()
-                ->buffer_pool(device_idx)
-                ->reserve_buffer(array_type_size(dtype) * shape.size()),
-            shape,
-            dtype)
-    {}
-
-    MultiArray(std::size_t device_pool_idx,
-               std::initializer_list<ShapeDim> shape_dims,
-               ArrayType dtype=ArrayType::float32)
-        :MultiArray(device_pool_idx, Shape(shape_dims), dtype) {
-
-    }
-
-    MultiArray(BufferPoolRef device_pool,
-               std::initializer_list<ShapeDim> shape_dims,
-               ArrayType dtype=ArrayType::float32)
-        :MultiArray(device_pool, Shape(shape_dims), dtype) {
-    }
+    // FIXME: Cleanup
+//    MultiArray(std::size_t device_pool_idx,
+//               std::initializer_list<ShapeDim> shape_dims,
+//               ArrayType dtype=ArrayType::float32)
+//        :MultiArray(device_pool_idx, Shape(shape_dims), dtype) {
+//
+//    }
+//
+//    MultiArray(BufferPoolRef device_pool,
+//               std::initializer_list<ShapeDim> shape_dims,
+//               ArrayType dtype=ArrayType::float32)
+//        :MultiArray(device_pool, Shape(shape_dims), dtype) {
+//    }
 
     // Creates a new multi-array sharing the same buffer and the same
     // promise object.
-    MultiArray reshape(std::initializer_list<ShapeDim> shape_dims) {
-        if (_buffer->byte_size() != _shape.size() * array_type_size(_dtype)) {
-            throw std::invalid_argument(
-                "Buffer's size doesn't match with the shape given");
-        }
-        return MultiArray(
-            _buffer, _shape.reshape(shape_dims), _dtype);
+    MultiArrayRef reshape(const std::vector<ShapeDim> &shape_dims) {
+        return std::shared_ptr<MultiArray>(
+            new MultiArray(_buffer, _shape.reshape(shape_dims), _dtype));
     }
 
     std::size_t size() const { return _shape.size(); }
@@ -144,10 +117,37 @@ public:
             const CLBufferRef &buffer,
             const Shape &shape,
             const ArrayType dtype) {
-        return std::make_shared<MultiArray>(buffer, shape, dtype);
+        return std::shared_ptr<MultiArray>(
+            new MultiArray(buffer, shape, dtype));
     }
 
+    static MultiArrayRef make(BufferPoolRef device_pool, Shape shape,
+                              ArrayType dtype) {
+        return from_buffer(
+            device_pool->reserve_buffer(array_type_size(dtype) * shape.size()),
+            shape,
+            dtype);
+    }
+
+    static MultiArrayRef make(DeviceIndex device_idx, Shape shape, ArrayType dtype) {
+        return from_buffer(
+            CLMemoryManager::get_default()
+                ->buffer_pool(device_idx)
+                ->reserve_buffer(array_type_size(dtype) * shape.size()),
+            shape,
+            dtype);
+    }
+
+
 private:
+    MultiArray(
+        const CLBufferRef &buffer,
+        const Shape &shape,
+        const ArrayType dtype)
+        : _buffer{buffer},
+          _shape{shape},
+          _dtype{dtype}
+    {}
 
     std::shared_ptr<CLBuffer> _buffer;
     Shape _shape;

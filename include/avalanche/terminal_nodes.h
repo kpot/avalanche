@@ -33,6 +33,10 @@ public:
         return name;
     }
 
+    std::string repr() const override {
+        return format_repr("Variable", name);
+    }
+
     NodeRefList inputs() const override {
         return NodeRefList();
     }
@@ -87,6 +91,10 @@ public:
 
     std::string to_string() const override {
         return "Constant(" + _name + ")";
+    }
+
+    std::string repr() const override {
+        return format_repr("Constant", _name);
     }
 
     NodeRefList inputs() const override {

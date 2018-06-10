@@ -85,9 +85,9 @@ std::size_t CLBufferPool::num_available_blocks() const {
     return result;
 }
 
-std::shared_ptr<MultiArray>
+MultiArrayRef
 CLBufferPool::make_array(Shape shape, ArrayType dtype) {
-    return std::make_shared<MultiArray>(own_reference(), shape, dtype);
+    return MultiArray::make(own_reference(), shape, dtype);
 }
 
 std::shared_ptr<CLBufferPool> CLBufferPool::own_reference() {

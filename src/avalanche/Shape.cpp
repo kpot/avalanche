@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <sstream>
 
+#include <fmt/format.h>
+
 #include "avalanche/Shape.h"
 
 namespace avalanche {
@@ -18,7 +20,7 @@ std::size_t avalanche::Shape::size() const {
     return result;
 }
 
-Shape Shape::reshape(const std::vector<ShapeDim> &dims) {
+Shape Shape::reshape(const std::vector<ShapeDim> &dims) const {
     std::size_t new_part_size = 1,
         undefined_dim_index = 0,
         i = 0;
@@ -44,12 +46,16 @@ Shape Shape::reshape(const std::vector<ShapeDim> &dims) {
     if (!has_undefined_dim) {
         if (current_size != new_part_size) {
             throw std::invalid_argument(
-                "The new shape doesn't match the original size of the array");
+                fmt::format("The new shape {} doesn't match "
+                            "the original shape of the array {}",
+                            result_shape.to_string(), to_string()));
         }
     } else {
         if (current_size % new_part_size > 0) {
             throw std::invalid_argument(
-                "The new shape doesn't match the original size of the array");
+                fmt::format("The new shape {} doesn't match "
+                            "the original shape of the array {}",
+                            result_shape.to_string(), to_string()));
         }
         result_shape._dims[undefined_dim_index] = static_cast<ShapeDim >(
             current_size / new_part_size);
@@ -57,17 +63,20 @@ Shape Shape::reshape(const std::vector<ShapeDim> &dims) {
     return result_shape;
 }
 
+std::size_t Shape::dim_real_index(ShapeDim dim) const {
+    return static_cast<std::size_t>(
+        (dim < 0) ? static_cast<ShapeDim>(_dims.size()) + dim : dim);
+}
+
 ShapeDim Shape::dim(ShapeDim index) const {
-    index = (index < 0) ? static_cast<ShapeDim>(_dims.size()) + index : index;
-    return _dims.at(static_cast<std::size_t>(index));
+    return _dims.at(dim_real_index(index));
 }
 
 ShapeDim Shape::operator[](ShapeDim index) const {
-    index = (index < 0) ? static_cast<ShapeDim>(_dims.size()) + index : index;
-    return _dims[static_cast<std::size_t>(index)];
+    return _dims[dim_real_index(index)];
 }
 
-std::string Shape::to_string() {
+std::string Shape::to_string() const {
     std::ostringstream result;
     result << "Shape(";
     for (std::size_t i = 0; i < _dims.size(); ++i) {
@@ -109,7 +118,9 @@ void Shape::align_for_broadcasting(const Shape &shape1, const Shape &shape2,
          s1 != shape1_aligned._dims.end();
          ++s1, ++s2, ++res) {
         if (!(*s1 == 1 || *s2 == 1) && *s1 != *s2) {
-            throw std::invalid_argument("Incompatible shapes");
+            throw std::invalid_argument(
+                fmt::format("Cannot align shapes {} and {} for broadcasting",
+                            shape1.to_string(), shape2.to_string()));
         }
         *res = std::max(*s1, *s2);
     }
@@ -138,5 +149,18 @@ Shape::Shape(const std::vector<ShapeDim> &dims) :_dims(dims) {
     validate_dims(_dims);
 }
 
+Shape::Shape(std::initializer_list<ShapeDim> dims) :_dims(dims) {
+    validate_dims(_dims);
+}
+
+std::string Shape::dims_to_string(const std::vector<ShapeDim> &dims) {
+    std::ostringstream result;
+    result << "{";
+    for (std::size_t i = 0; i < dims.size(); ++i) {
+        result << dims[i] << (i == dims.size() - 1 ? "" : ", ");
+    }
+    result << "}";
+    return result.str();
+}
 
 } // namespace

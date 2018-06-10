@@ -222,11 +222,9 @@ PYBIND11_MODULE(pyvalanche, m) {
         .value("float64", ArrayType::float64)
         .export_values();
 
-//py::class_<BaseNode, PyBaseNode>(m, "BaseNode")
-//    .def(py::init<>())
-//    .def("to_string", &BaseNode::to_string);
     py::class_<BaseNode, NodeRef>(m, "BaseNode")
         .def("__str__", &BaseNode::to_string)
+        .def("__repr__", &BaseNode::repr)
         .def("inputs", &BaseNode::inputs)
         .def("dtype", &BaseNode::dtype)
         .def_property_readonly("shape", &BaseNode::shape);
@@ -253,6 +251,11 @@ PYBIND11_MODULE(pyvalanche, m) {
 
     py::module ops = m.def_submodule("ops", "Available operations");
 
+#define REDUCE_ARGS \
+        py::arg_v("node", "input tensor"), \
+        py::arg_v("reduce_axis", std::vector<ShapeDim>(), "axis to reduce"), \
+        py::arg_v("keep_dims", false, "Keep reduced dimensions")
+
     ops
         .def("relu", &FU<ReLU>)
         .def("tanh", &FU<Tanh>)
@@ -261,6 +264,12 @@ PYBIND11_MODULE(pyvalanche, m) {
         .def("exp", &FU<Exp>)
         .def("plus", &SimpleBinaryOp<Plus>,
              "Elem-wise addition with broadcasting")
+        .def("minus", &SimpleBinaryOp<Minus>,
+             "Elem-wise subtraction with broadcasting")
+        .def("divide", &SimpleBinaryOp<Divide>,
+             "Elem-wise division with broadcasting")
+        .def("multiply", &SimpleBinaryOp<Multiply>,
+             "Elem-wise multiplication with broadcasting")
         .def("matmul", &matmul,
              py::arg_v("a", "Left matrix"),
              py::arg_v("b", "Right matrix"),
@@ -269,9 +278,16 @@ PYBIND11_MODULE(pyvalanche, m) {
                        "to be transposed before multiplication"),
              py::arg_v("transpose_right", false,
                        "set to True if the second matrix needs "
-                       "to be transposed before multiplication"));
+                       "to be transposed before multiplication"))
+        .def("softmax", &softmax,
+             py::arg_v("node", "Input tensor"),
+             py::arg_v("axis", -1, "Dimension to perform on"))
+        .def("reshape", &FU<Reshape, const Shape&>)
+        .def("reduce_sum", &FU<ReduceSum, std::vector<ShapeDim>, bool>, REDUCE_ARGS)
+        .def("reduce_mean", &FU<ReduceMean, std::vector<ShapeDim>, bool>, REDUCE_ARGS);
 //    .def("plus", [](const NodeRef &left, const NodeRef &right) -> NodeRef { return std::static_pointer_cast<BaseNode>(std::make_shared<Plus>(left, right)); });
 //    .def("matmul", &F<MatMul>);
+#undef REDUCE_ARGS
 
 //m.def("add", &add, R"pbdoc(
 //        Add two numbers

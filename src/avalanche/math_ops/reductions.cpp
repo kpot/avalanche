@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "clblast.h"
+#include <fmt/format.h>
 
 #include "avalanche/opencl_utils.h"
 #include "avalanche/CodeCache.h"
@@ -29,45 +30,53 @@ inline void leave_unique_only(Container &container) {
 }
 
 Reduction::Reduction(const NodeRef &input)
-    : _result_shape{},
+    : _result_shape_dims_cut{},
+      _result_shape_dims_kept{},
       _result_dtype{input->dtype()},
       _kernel_name{},
-      _reduction_steps{}
+      _reduction_steps{},
+      _dims_to_cut{},
+      _keep_dims{false}
 {
-
 }
 
 Reduction::Reduction(const NodeRef &input,
-                     std::vector<ShapeDim> dims_to_cut)
-    :_result_shape{},
+                     std::vector<ShapeDim> reduce_axis,
+                     const bool keep_dims)
+    :_result_shape_dims_cut{},
+     _result_shape_dims_kept{},
      _result_dtype{input->dtype()},
      _kernel_name{},
-     _reduction_steps{}
+     _reduction_steps{},
+     _dims_to_cut{reduce_axis},
+     _keep_dims{keep_dims}
 {
     const auto input_shape = input->shape();
-    // Normalizing "negative" (relative) dims_to_cut into absolute ones
+    // Normalizing "negative" (relative) reduce_axis into absolute ones
     auto input_rank = input_shape.rank();
-    for (auto &dim: dims_to_cut) {
+    for (auto &dim: reduce_axis) {
         if (dim < 0) {
             dim = static_cast<ShapeDim>(input_rank) + dim;
         }
         if (dim >= input_rank) {
             throw std::invalid_argument(
-                "One of the dims_to_cut doesn't exist");
+                "One of the reduce_axis doesn't exist");
         }
     }
-    leave_unique_only(dims_to_cut);
-    if (dims_to_cut.size() == input->shape().rank()) {
+    leave_unique_only(reduce_axis);
+    if (reduce_axis.empty() || reduce_axis.size() == input->shape().rank()) {
         // It seems we need to cut all dimensions, completely (full reduction)
         _reduction_steps.clear();
-        _result_shape = Shape();
+        _dims_to_cut.clear();
+        _result_shape_dims_cut = Shape();
     } else {
         // Preparing list of intermediate steps necessary to reduce
         // all requested dimensions (one by one)
-        _reduction_steps.reserve(dims_to_cut.size());
+        _reduction_steps.reserve(reduce_axis.size());
         auto result_dims = input_shape.dims();
-        for (auto dim = dims_to_cut.rbegin();
-             dim != dims_to_cut.rend(); ++dim) {
+        auto result_dims_preserved = input_shape.dims();
+        for (auto dim = reduce_axis.rbegin();
+             dim != reduce_axis.rend(); ++dim) {
             ReductionStep step;
             step.dim_size = static_cast<size_t>(result_dims[*dim]);
             step.source_block = 1;
@@ -82,8 +91,10 @@ Reduction::Reduction(const NodeRef &input,
             step.result_size = 1;
             for (auto d: result_dims) { step.result_size *= d; }
             _reduction_steps.push_back(step);
+            result_dims_preserved[*dim] = 1;
         }
-        _result_shape = Shape(result_dims);
+        _result_shape_dims_cut = Shape(result_dims);
+        _result_shape_dims_kept = Shape(result_dims_preserved);
     }
 }
 
@@ -135,12 +146,15 @@ MultiArrayRef Reduction::partial_reduction(const MultiArrayRef &value) const {
         result_buffer->set_completion_event(reduction_is_done);
         source_buffer = result_buffer;
     }
-    auto result = MultiArray::from_buffer(result_buffer, _result_shape, _result_dtype);
+    auto result = MultiArray::from_buffer(
+        result_buffer,
+        (_keep_dims ? _result_shape_dims_kept : _result_shape_dims_cut),
+        _result_dtype);
     return result;
 }
 
 MultiArrayRef Reduction::forward(const MultiArrayRef &value) const {
-    if (_result_shape.rank() == 0) {
+    if (_result_shape_dims_cut.rank() == 0) {
         return full_reduction(value);
     } else {
         return partial_reduction(value);
@@ -188,7 +202,7 @@ MultiArrayRef Reduction::full_reduction(const MultiArrayRef &value) const {
         cl::NDRange(work_group_size),
         &wait_for_events,
         &step_is_done);
-    auto result = pool->make_array(_result_shape, _result_dtype);
+    auto result = pool->make_array(_result_shape_dims_cut, _result_dtype);
     result->add_dependencies({step1_buffer});
     kernel.setArg(0, step1_buffer->cl_buffer_unsafe());
     kernel.setArg(1, result->cl_buffer_unsafe());
@@ -216,10 +230,18 @@ const NodeRef Reduction::apply_chain_rule(const NodeRef &wrt_input,
                                           const NodeRefList &all_inputs) const {
 
     if (all_inputs[0] == wrt_input) {
-        return F<Multiply>(d_target_wrt_this, partial_derivative(wrt_input));
+        // FIXME: Cleanup
+        std::cout << "Reduction: " << d_target_wrt_this->to_string() << std::endl;
+        return F<Multiply>(
+            FU<Reshape>(d_target_wrt_this, _result_shape_dims_kept),
+            partial_derivative(wrt_input));
     } else {
         throw std::logic_error(messages::CANT_DIFF_UNEXISTING_INPUT_MESSAGE);
     }
+}
+
+std::string Reduction::rh_name() const {
+    return fmt::format(", {})", Shape::dims_to_string(_dims_to_cut));
 }
 
 
@@ -234,6 +256,32 @@ const NodeRef ReduceMean::partial_derivative(const NodeRef &input) const {
         dim_prod *= static_cast<float>(step.dim_size);
     }
     return FU<Scale>(Constant::ones_like(input), 1.0 / dim_prod);
+}
+
+const NodeRef softmax(const NodeRef &node, const ShapeDim axis) {
+    auto mean = FU<ReduceMean>(node, std::vector<ShapeDim>({axis}), true);
+    auto exp_node = FU<Exp>(node - mean);
+    auto sum_node = FU<ReduceSum>(exp_node, std::vector<ShapeDim>({axis}), true);
+    return exp_node / sum_node;
+}
+
+Reshape::Reshape(const NodeRef &input, const Shape &new_shape)
+        :_new_shape{input->shape().reshape(new_shape.dims())},
+         _result_dtype{input->dtype()}
+{
+}
+
+MultiArrayRef Reshape::forward(const MultiArrayRef &value) const {
+    return value->reshape(_new_shape.dims());
+}
+
+const NodeRef Reshape::apply_chain_rule(const NodeRef &wrt_input,
+                                        const NodeRef &d_target_wrt_this,
+                                        const NodeRefList &all_inputs) const {
+    return FU<Reshape>(
+        F<Multiply>(d_target_wrt_this,
+                    Constant::ones(_new_shape, _result_dtype)),
+        wrt_input->shape());
 }
 
 } // namespace

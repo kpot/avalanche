@@ -38,8 +38,10 @@ const NodeRef Constant::fill(Shape shape, ArrayType dtype, float value) {
         return result;
     };
     return std::static_pointer_cast<BaseNode>(
-        std::make_shared<Constant>(std::string("Fill") + std::to_string(value),
-                                   initializer, shape, dtype));
+        std::make_shared<Constant>(
+            (std::string("Fill ") + shape.to_string() +
+                " with " + std::to_string(value)),
+            initializer, shape, dtype));
 }
 
 MultiArrayRef Constant::eval(Context &context, ExecutionCache &cache) const {

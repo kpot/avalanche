@@ -18,10 +18,10 @@ const NodeRef Plus::apply_chain_rule(
     const NodeRefList &all_inputs) const {
     if (all_inputs[0] == wrt_input) {
         // Here we need to determine the dimensions we remove
-        return FU<ReduceSum>(d_target_wrt_this, left_vs_result_shape_diff);
+        return left_vs_result_shape_diff.empty() ? d_target_wrt_this : FU<ReduceSum>(d_target_wrt_this, left_vs_result_shape_diff);
     } else if (all_inputs[1] == wrt_input) {
         // Here we need to determine the dimensions we remove
-        return FU<ReduceSum>(d_target_wrt_this, right_vs_result_shape_diff);
+        return right_vs_result_shape_diff.empty() ? d_target_wrt_this : FU<ReduceSum>(d_target_wrt_this, right_vs_result_shape_diff);
     } else {
         throw std::logic_error(messages::CANT_DIFF_UNEXISTING_INPUT_MESSAGE);
     }
@@ -34,11 +34,11 @@ Minus::apply_chain_rule(const NodeRef &wrt_input,
                         const NodeRefList &all_inputs) const {
     if (all_inputs[0] == wrt_input) {
         // with respect to left operand
-        return FU<ReduceSum>(d_target_wrt_this, left_vs_result_shape_diff);
+        return left_vs_result_shape_diff.empty() ? d_target_wrt_this : FU<ReduceSum>(d_target_wrt_this, left_vs_result_shape_diff);
     } else if (all_inputs[1] == wrt_input) {
         // with respect to right_operand
         return FU<Scale>(
-            FU<ReduceSum>(d_target_wrt_this, right_vs_result_shape_diff),
+            right_vs_result_shape_diff.empty() ? d_target_wrt_this : FU<ReduceSum>(d_target_wrt_this, right_vs_result_shape_diff),
             -1);
     } else {
         throw std::logic_error(messages::CANT_DIFF_UNEXISTING_INPUT_MESSAGE);
@@ -49,16 +49,17 @@ Minus::apply_chain_rule(const NodeRef &wrt_input,
 const NodeRef Multiply::apply_chain_rule(const NodeRef &wrt_input,
                                          const NodeRef &d_target_wrt_this,
                                          const NodeRefList &all_inputs) const {
-    NodeRef input_product = nullptr;
-    for (auto &input: all_inputs) {
-        if (input == wrt_input) continue;
-        if (input_product == nullptr) {
-            input_product = input;
-        } else {
-            input_product = F<Multiply>(input_product, input);
-        }
+    if (all_inputs[0] == wrt_input) {
+        // with respect to left operand
+        auto part_derivative = F<Multiply>(d_target_wrt_this, all_inputs[1]);
+        return left_vs_result_shape_diff.empty() ? part_derivative : FU<ReduceSum>(part_derivative, left_vs_result_shape_diff, true);
+    } else if (all_inputs[1] == wrt_input) {
+        // with respect to right_operand
+        auto part_derivative = F<Multiply>(d_target_wrt_this, all_inputs[0]);
+        return right_vs_result_shape_diff.empty() ? part_derivative : FU<ReduceSum>(part_derivative, right_vs_result_shape_diff, true);
+    } else {
+        throw std::logic_error(messages::CANT_DIFF_UNEXISTING_INPUT_MESSAGE);
     }
-    return F<Multiply>(input_product, d_target_wrt_this);
 }
 
 const NodeRef Divide::apply_chain_rule(const NodeRef &wrt_input,
@@ -66,13 +67,15 @@ const NodeRef Divide::apply_chain_rule(const NodeRef &wrt_input,
                                        const NodeRefList &all_inputs) const {
     if (all_inputs[0] == wrt_input) {
         // with respect to left operand
-        return F<Divide>(d_target_wrt_this, all_inputs[1]);
+        auto part_derivative = F<Divide>(d_target_wrt_this, all_inputs[1]);
+        return left_vs_result_shape_diff.empty() ? part_derivative : FU<ReduceSum>(part_derivative, left_vs_result_shape_diff, true);
     } else if (all_inputs[1] == wrt_input) {
         // with respect to right_operand
-        return F<Multiply>(
+        auto part_derivative = F<Multiply>(
+            d_target_wrt_this,
             F<Divide>(F<Negate>(all_inputs[0]),
-                      F<Multiply>(all_inputs[1], all_inputs[1])),
-            d_target_wrt_this);
+                      F<Multiply>(all_inputs[1], all_inputs[1])));
+        return right_vs_result_shape_diff.empty() ? part_derivative : FU<ReduceSum>(part_derivative, right_vs_result_shape_diff, true);
     } else {
         throw std::logic_error(messages::CANT_DIFF_UNEXISTING_INPUT_MESSAGE);
     }

@@ -89,7 +89,8 @@ const NodeRef back_propagate_node(
  * @param target target node for which we calculate the derivatives
  * @param with_respect_to calculate derivatives with respect to these variables
  * @return a mapping between nodes listed in `with_respect_to` and the output
- *  nodes of respecting derivatives.
+ *  nodes of respecting derivatives, as well as any other derivatives that
+ *  were necessary for calculating these ones.
  */
 GradTable build_back_propagation_graph(const NodeRef &target,
                                        const NodeRefList &with_respect_to) {

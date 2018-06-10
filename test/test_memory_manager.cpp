@@ -64,16 +64,17 @@ TEST_CASE("Testing Shape class") {
 
 TEST_CASE("Checking MultiArray") {
     auto dtype = avalanche::ArrayType::float32;
-    avalanche::MultiArray array(0, {1, 2, 3}, dtype);
-    avalanche::MultiArray array2(0, avalanche::Shape({1, 2, 3}), dtype);
-    auto reshaped_array = array.reshape({2, 3});
-    REQUIRE(reshaped_array.size() == array.size());
-    REQUIRE(reshaped_array.shape() == avalanche::Shape({2, 3}));
-    REQUIRE(array.reshape({-1}).shape() == avalanche::Shape({6}));
-    REQUIRE(array.reshape({2, -1}).shape() == avalanche::Shape({2, 3}));
-    REQUIRE(array.reshape({1, -1, 1, 2}).shape()
+    auto array = avalanche::MultiArray::make(0, {1, 2, 3}, dtype);
+    auto array2 = avalanche::MultiArray::make(0, avalanche::Shape({1, 2, 3}),
+                                              dtype);
+    auto reshaped_array = array->reshape({2, 3});
+    REQUIRE(reshaped_array->size() == array->size());
+    REQUIRE(reshaped_array->shape() == avalanche::Shape({2, 3}));
+    REQUIRE(array->reshape({-1})->shape() == avalanche::Shape({6}));
+    REQUIRE(array->reshape({2, -1})->shape() == avalanche::Shape({2, 3}));
+    REQUIRE(array->reshape({1, -1, 1, 2})->shape()
             == avalanche::Shape({1, 3, 1, 2}));
-    REQUIRE(array.reshape({1, -1, 1, 2}).shape()
+    REQUIRE(array->reshape({1, -1, 1, 2})->shape()
             != avalanche::Shape({4, 3, 1, 2}));
 }
 
@@ -81,8 +82,7 @@ TEST_CASE("Checking context storage") {
     auto dtype = avalanche::ArrayType::float32;
     avalanche::NodeId node1_id = 0, node2_id = 10;
     auto context = avalanche::Context::make_for_device(0);
-    auto array_ref = avalanche::MultiArrayRef(
-        new avalanche::MultiArray(0, {1, 2, 3}, dtype));
+    auto array_ref = avalanche::MultiArray::make(0, {1, 2, 3}, dtype);
     context->init(node1_id, array_ref);
     // Checks that the cache is properly initialized
     avalanche::MultiArrayRef context_array;
@@ -95,8 +95,7 @@ TEST_CASE("Checking ExecutionCache") {
     avalanche::NodeId node1_id = 0, node2_id = 10;
     avalanche::ExecutionCache cache(0);
     cache.set_node_params(node1_id, 2, 0); // fake descendants to activate cache
-    auto array_ref = avalanche::MultiArrayRef(
-        new avalanche::MultiArray(0, {1, 2, 3}, dtype));
+    auto array_ref = avalanche::MultiArray::make(0, {1, 2, 3}, dtype);
     cache.put(node1_id, array_ref);
     avalanche::CachedItem cached;
     REQUIRE(cache.get_info(node1_id, cached));

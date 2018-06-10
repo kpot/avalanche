@@ -15,6 +15,7 @@ find_package(OpenCL REQUIRED)
 set(BUILD_SHARED_LIBS OFF)
 add_subdirectory(libs/pybind11)
 add_subdirectory(libs/CLBlast EXCLUDE_FROM_ALL)
+add_subdirectory(libs/fmt EXCLUDE_FROM_ALL)
 
 set(USE_OPENCL ON)
 
@@ -65,13 +66,15 @@ add_library(avalanche_static STATIC
         src/avalanche/math_ops/reductions.cpp)
 target_compile_features(avalanche_static PRIVATE cxx_std_14)
 target_link_libraries(avalanche_static
-        PUBLIC ${OpenCL_LIBRARY} PRIVATE clblast)
+        PUBLIC ${OpenCL_LIBRARY}
+        PRIVATE clblast fmt-header-only)
 target_include_directories(avalanche_static
         PUBLIC libs/cl_crossplatform include ${OpenCL_INCLUDE_DIRS})
 target_include_directories(avalanche_static
         PUBLIC SYSTEM libs/cl_crossplatform)
 target_include_directories(avalanche_static
         PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
+
 
 target_compile_definitions(avalanche_static PUBLIC ${OPENCL_REQUIRED_DEFINITIONS})
 # Allows to link with OpenCL without pointing to a specific SDK

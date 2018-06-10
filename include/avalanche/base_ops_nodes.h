@@ -40,6 +40,10 @@ public:
         return output;
     }
 
+    std::string repr() const override {
+        return format_repr(typeid(op).name(), "");
+    }
+
     NodeRefList inputs() const override {
         return NodeRefList({input});
     }
@@ -84,6 +88,10 @@ public:
         output += left->to_string() + " " + op.name() + " " + right->to_string();
         output += ")";
         return output;
+    }
+
+    std::string repr() const override {
+        return format_repr(typeid(op).name(), "");
     }
 
     NodeRefList inputs() const override {

@@ -35,6 +35,7 @@ public:
         const NodeRefList &all_inputs) const = 0;
 
     virtual std::string to_string() const = 0;
+    virtual std::string repr() const = 0;
 
     virtual NodeRefList inputs() const = 0;
 
@@ -44,6 +45,7 @@ public:
 
     const Shape& shape() const { return _shape; }
     ArrayType dtype() const { return _dtype; }
+    std::string format_repr(const std::string &operation, const std::string &name) const;
 
 private:
     Shape _shape;

@@ -19,6 +19,7 @@ public:
     void init(const NodeRef &node, const MultiArrayRef& array);
     void init(const NodeId node_id, const MultiArrayRef& array);
 
+    // FIXME: Why can't you just take the shape from the node?
     template <typename T>
     MultiArrayRef init(const NodeRef &node,
                        const std::vector<T> &data,
