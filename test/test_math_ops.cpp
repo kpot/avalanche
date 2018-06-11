@@ -794,4 +794,44 @@ TEST_CASE("Checking automatic derivations (backprop)") {
         verify_derivatives<float>(context, {data1, data2}, output, 0.05);
     }
 
+    SECTION("Derivatives of MLP with softmax output") {
+        auto inputs = Variable::make("inputs", {3, 3}, ArrayType::float32);
+        auto weights1 = Variable::make("weights1", {3, 3}, ArrayType::float32);
+        auto biases1 = Variable::make("biases1", {3}, ArrayType::float32);
+        auto weights2 = Variable::make("weights2", {3, 3}, ArrayType::float32);
+        auto biases2 = Variable::make("biases2", {3}, ArrayType::float32);
+        auto output1 = FU<Sigmoid>(F<Plus>(F<MatMul>(inputs, weights1), biases1));
+        auto output2 = softmax(F<Plus>(F<MatMul>(output1, weights2), biases2));
+        auto context = Context::make_for_device(0);
+        context->init<float>(
+            inputs,
+            {0.0f, 1.0f, 2.0,
+             3.0, 4.0, 5.0,
+             6.0, 7.0, 8.0},
+            inputs->shape());
+        context->init<float>(
+            weights1,
+            {0.0f, 3.0f, 6.0,
+             1.0, 4.0, 7.0,
+             2.0, 5.0, 8.0},
+            weights1->shape());
+        context->init<float>(
+            biases1,
+            {0.5f, 0.0f, -0.5},
+            biases2->shape());
+        context->init<float>(
+            weights2,
+            {0.0f, 3.0f, 6.0,
+             1.0, 4.0, 7.0,
+             2.0, 5.0, 8.0},
+            weights2->shape());
+        context->init<float>(
+            biases2,
+            {0.5f, 0.0f, -0.5},
+            biases2->shape());
+        verify_derivatives<float>(
+            context,
+            {inputs, weights1, biases1, weights2, biases2},
+            output2, 0.05);
+    }
 }
