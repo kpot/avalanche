@@ -26,7 +26,6 @@ public:
     }
 
     MultiArrayRef eval(Context &context, ExecutionCache &cache) const override {
-        // Here you need to take into account the reference count
         MultiArrayRef result;
         if (!cache.get(id, result)) {
             result = op.forward(input->eval(context, cache));

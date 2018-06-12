@@ -57,6 +57,8 @@ void CLMemoryManager::init_for_all(const cl_device_type device_type) {
                     _buffer_pools.push_back(
                         std::make_shared<CLBufferPool>(
                             this, _device_counter, context, queue));
+                    _device_info.push_back(
+                        DeviceInfo({device_name, platform_name, _device_counter}));
                     ++_device_counter;
                 } else {
                     std::cout << "The device '" << device_name
@@ -89,6 +91,14 @@ std::shared_ptr<CLMemoryManager> CLMemoryManager::get_default() {
 
 CLMemoryManager::~CLMemoryManager() {
     std::cout << "CLMemory manager has been destroyed\n";
+}
+
+const DeviceInfo &CLMemoryManager::device_info(DeviceIndex idx) const {
+    return _device_info.at(idx);
+}
+
+const std::vector<DeviceInfo> &CLMemoryManager::list_devices() const {
+    return _device_info;
 }
 
 } // namespace

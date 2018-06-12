@@ -46,3 +46,17 @@ TEST_CASE("Construction of the tree") {
             Catch::Contains("incompatible"));
     }
 }
+
+TEST_CASE("Variable initializers") {
+    using namespace avalanche;
+    std::vector<float> initial_value({1.0, 2.0, 3.0});
+    auto initializer = value_initializer(initial_value, Shape({1, 3}));
+    auto var1 = Variable::make("variable", {1, 3}, ArrayType::float32,
+                                 initializer);
+    auto context = Context::make_for_device(0);
+    Executor executor(context, {var1});
+    auto results = executor.run();
+    std::vector<float> cpu_copy;
+    results[0]->fetch_data_into(cpu_copy);
+    REQUIRE(cpu_copy == initial_value);
+}

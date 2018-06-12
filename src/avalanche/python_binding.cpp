@@ -48,20 +48,6 @@ public:
             BaseNode,
             inputs);
     };
-
-    bool is_variable() const override {
-        PYBIND11_OVERLOAD_PURE(
-            bool,
-            BaseNode,
-            is_variable);
-    }
-
-    bool is_scalar_variable() const override {
-        PYBIND11_OVERLOAD_PURE(
-            bool,
-            BaseNode,
-            is_scalar_variable);
-    }
 };
 
 
@@ -83,6 +69,8 @@ ArrayType dtype_to_avalanche_array_type(const py::dtype &dtype) {
     ArrayType array_type;
     switch (dtype.kind()) {
         case 'f':
+        case 'd':
+        case 'e':
             // identify dtype
             switch (dtype.itemsize()) {
                 case 2:
@@ -99,6 +87,8 @@ ArrayType dtype_to_avalanche_array_type(const py::dtype &dtype) {
             }
             break;
         case 'i':
+        case 'l':
+        case 'q':
             switch (dtype.itemsize()) {
                 case 1:
                     array_type = ArrayType::int8;
@@ -128,6 +118,20 @@ using ContextInitArray = py::array_t<
     ContextInitArrayType,
     py::array::forcecast | py::array::c_style>;
 
+
+std::vector<ShapeDim> convert_shape(const std::vector<ssize_t> &shape) {
+    std::vector<ShapeDim> result(shape.size());
+    std::copy(shape.begin(), shape.end(), result.begin());
+    return result;
+}
+
+std::vector<ssize_t> convert_shape(const std::vector<ShapeDim> &shape) {
+    std::vector<ssize_t> result(shape.size());
+    std::copy(shape.begin(), shape.end(), result.begin());
+    return result;
+}
+
+
 /** Initializes context with automatic conversion from given numpy array
  * to whatever the node requires */
 template <typename T>
@@ -138,8 +142,7 @@ MultiArrayRef init_context_with_cast(
     std::copy((const ContextInitArrayType *)info.ptr,
               ((const ContextInitArrayType *)info.ptr) + data.size(),
               tmp_copy.begin());
-    std::vector<ShapeDim> dims(info.shape.size());
-    std::copy(info.shape.begin(), info.shape.end(), dims.begin());
+    auto dims = convert_shape(info.shape);
     return context->init(node, tmp_copy, Shape(dims));
 }
 
@@ -148,11 +151,10 @@ MultiArrayRef init_context_with_cast(
  * numpy array exactly matches the one of the node.
  */
 template<>
-MultiArrayRef init_context_with_cast<ContextInitArrayType >(
+MultiArrayRef init_context_with_cast<ContextInitArrayType>(
     const NodeRef &node, ContextRef &context, ContextInitArray &data) {
     py::buffer_info info = data.request();
-    std::vector<ShapeDim> dims(info.shape.size());
-    std::copy(info.shape.begin(), info.shape.end(), dims.begin());
+    auto dims = convert_shape(info.shape);
     return context->init(
         node, info.ptr, static_cast<std::size_t>(data.nbytes()),
         dtype_of_static_type<ContextInitArrayType>, Shape(dims));
@@ -168,9 +170,7 @@ init_context(ContextRef &context, const NodeRef &node, ContextInitArray data) {
 
 template <typename T>
 py::array array_to_numpy_template(MultiArrayRef &array) {
-    std::vector<ssize_t> dims(array->shape().rank());
-    auto &array_dims = array->shape().dims();
-    std::copy(array_dims.begin(), array_dims.end(), dims.begin());
+    auto dims = convert_shape(array->shape().dims());
     py::array_t<T, py::array::c_style> result(dims);
     auto info = result.request(true);
     array->wait_until_ready();
@@ -189,6 +189,26 @@ py::array array_to_numpy(MultiArrayRef &array) {
     ArrayType required_dtype = array->dtype();
     return array_to_numpy_switch(required_dtype, array);
 }
+
+
+Initializer numpy_value_initializer(py::array value) {
+    Initializer initializer = [value](Context &context) mutable {
+        py::buffer_info info = value.request(false);
+        if (!(value.flags() & py::array::c_style)) {
+            throw std::invalid_argument("Only c-style arrays are supported");
+        }
+        Shape shape(convert_shape(info.shape));
+        ArrayType array_type = dtype_to_avalanche_array_type(value.dtype());
+        auto result = context.device_pool()->make_array(shape, array_type);
+        auto writing_is_done = result->buffer_when_ready()->write_data(
+            info.ptr, static_cast<std::size_t>(info.size * info.itemsize));
+        // FIXME: Probably the waiting is unnecessary, since this event is a "completion event" anyway.
+        writing_is_done.wait();
+        return result;
+    };
+    return initializer;
+}
+
 
 PYBIND11_MODULE(pyvalanche, m) {
     m.doc() = R"pbdoc(
@@ -222,7 +242,7 @@ PYBIND11_MODULE(pyvalanche, m) {
         .value("float64", ArrayType::float64)
         .export_values();
 
-    py::class_<BaseNode, NodeRef>(m, "BaseNode")
+    py::class_<BaseNode, NodeRef>(m, "BaseNode", py::dynamic_attr())
         .def("__str__", &BaseNode::to_string)
         .def("__repr__", &BaseNode::repr)
         .def("inputs", &BaseNode::inputs)
@@ -237,17 +257,31 @@ PYBIND11_MODULE(pyvalanche, m) {
         .def("init", &init_context)
         .def("eval", &Context::eval);
 
-    py::class_<GradTable>(m, "GradTable");
     py::class_<Executor>(m, "Executor")
         .def(py::init<const ContextRef&, const NodeRefList&>())
         .def("run", &Executor::run);
 
+    py::class_<DeviceInfo>(m, "DeviceInfo")
+        .def_readwrite("name", &DeviceInfo::name)
+        .def_readwrite("platform", &DeviceInfo::platform)
+        .def_readwrite("id", &DeviceInfo::id);
+
+    py::class_<CLMemoryManager, MemoryManagerRef >(m, "MemoryManager")
+        .def_property_readonly("num_devices", &CLMemoryManager::num_devices)
+        .def("device_info", &CLMemoryManager::device_info)
+        .def_property_readonly("all_devices", &CLMemoryManager::list_devices);
+
+    py::class_<Initializer>(m, "Initializer");
+
+    m.def("default_memory_manager", CLMemoryManager::get_default);
+
     m.def("build_back_propagation_graph", &build_back_propagation_graph);
 
-    m.def("variable", &Variable::pymake,
-          R"pbdoc(
-      Creates a new variable
-      )pbdoc");
+    m.def("variable", &Variable::make, "Creates a new variable",
+          py::arg("name"), py::arg("shape_dims"), py::arg("dtype"),
+          py::arg("initializer"));
+
+    m.def("value_initializer", &numpy_value_initializer);
 
     py::module ops = m.def_submodule("ops", "Available operations");
 

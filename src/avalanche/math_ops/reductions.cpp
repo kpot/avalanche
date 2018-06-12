@@ -16,7 +16,7 @@
 
 namespace avalanche {
 
-constexpr char reducing_kernels_source[] = {
+constexpr char cl_sources_of_random_generators[] = {
 #include "avalanche/kernels/reductions.hex"
 };
 
@@ -104,7 +104,7 @@ cl::Program load_reduction_program(cl::CommandQueue &queue) {
         context,
         queue,
         "reductions",
-        reducing_kernels_source,
+        cl_sources_of_random_generators,
         "");
 }
 
@@ -242,6 +242,23 @@ const NodeRef Reduction::apply_chain_rule(const NodeRef &wrt_input,
 
 std::string Reduction::rh_name() const {
     return fmt::format(", {})", Shape::dims_to_string(_dims_to_cut));
+}
+
+const std::string &Reduction::cached_kernel_name() const {
+    if (_kernel_name.empty()) {
+        bool is_partial_reduction = _result_shape_dims_cut.rank() > 0;
+        auto op_name = kernel_op_name();
+        if (is_partial_reduction) {
+            _kernel_name = (
+                std::string("reduce_") + op_name
+                + "_" + array_type_name(_result_dtype));
+        } else {
+            _kernel_name = (
+                std::string("step_of_full_reduce_") + op_name
+                + "_" + array_type_name(_result_dtype));
+        }
+    }
+    return _kernel_name;
 }
 
 

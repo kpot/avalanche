@@ -30,20 +30,6 @@ using ArrayRefList = std::vector<MultiArrayRef >;
 class MultiArray {
 public:
 
-    // FIXME: Cleanup
-//    MultiArray(std::size_t device_pool_idx,
-//               std::initializer_list<ShapeDim> shape_dims,
-//               ArrayType dtype=ArrayType::float32)
-//        :MultiArray(device_pool_idx, Shape(shape_dims), dtype) {
-//
-//    }
-//
-//    MultiArray(BufferPoolRef device_pool,
-//               std::initializer_list<ShapeDim> shape_dims,
-//               ArrayType dtype=ArrayType::float32)
-//        :MultiArray(device_pool, Shape(shape_dims), dtype) {
-//    }
-
     // Creates a new multi-array sharing the same buffer and the same
     // promise object.
     MultiArrayRef reshape(const std::vector<ShapeDim> &shape_dims) {
@@ -102,7 +88,7 @@ public:
     }
 
     template <typename T>
-    void write_from_vector(std::vector<T> &data) const {
+    void write_from_vector(const std::vector<T> &data) const {
         wait_until_ready();
         if (_dtype != dtype_of_static_type<T>) {
             throw std::invalid_argument(

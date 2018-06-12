@@ -55,6 +55,20 @@ MultiArrayRef Constant::eval(Context &context, ExecutionCache &cache) const {
     return cached_value;
 }
 
-#undef FILL_BUFFER
-
+MultiArrayRef Variable::eval(Context &context, ExecutionCache &cache) const {
+    MultiArrayRef cached_value;
+    if (!context.get(id, cached_value)) {
+        if (_initializer) {
+            cached_value = _initializer(context);
+            cached_value->set_label(to_string());
+            context.init(id, cached_value);
+            std::cout << "Variable " << this << " is now initialized"
+                      << std::endl;
+        } else {
+            throw std::runtime_error(
+                "Cannot find an initial value for variable " + name);
+        }
+    }
+    return cached_value;
+}
 } // namespace

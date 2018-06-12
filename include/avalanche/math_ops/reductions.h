@@ -93,22 +93,7 @@ private:
     MultiArrayRef partial_reduction(const MultiArrayRef &value) const;
     MultiArrayRef full_reduction(const MultiArrayRef &value) const;
 
-    const std::string& cached_kernel_name() const {
-        if (_kernel_name.empty()) {
-            bool is_partial_reduction = _result_shape_dims_cut.rank() > 0;
-            auto op_name = kernel_op_name();
-            if (is_partial_reduction) {
-                _kernel_name = (
-                    std::string("reduce_") + op_name
-                    + "_" + array_type_name(_result_dtype));
-            } else {
-                _kernel_name = (
-                    std::string("step_of_full_reduce_") + op_name
-                    + "_" + array_type_name(_result_dtype));
-            }
-        }
-        return _kernel_name;
-    }
+    const std::string& cached_kernel_name() const;
 };
 
 class ReduceSum : public Reduction {

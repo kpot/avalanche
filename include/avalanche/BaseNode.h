@@ -39,13 +39,10 @@ public:
 
     virtual NodeRefList inputs() const = 0;
 
-    virtual bool is_variable() const { return false; }
-
-    virtual bool is_scalar_variable() const { return false; }
-
     const Shape& shape() const { return _shape; }
     ArrayType dtype() const { return _dtype; }
-    std::string format_repr(const std::string &operation, const std::string &name) const;
+    std::string format_repr(const std::string &operation,
+                            const std::string &name) const;
 
 private:
     Shape _shape;

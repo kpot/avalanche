@@ -59,6 +59,7 @@ add_library(avalanche_static STATIC
         src/avalanche/CodeCache.cpp
         src/avalanche/opencl_utils.cpp
         src/avalanche/casting.cpp
+        src/avalanche/random_nodes.cpp
         src/avalanche/math_ops/BroadcastedBinaryOp.cpp
         src/avalanche/math_ops/simple_arithemic.cpp
         src/avalanche/math_ops/MatMul.cpp
@@ -90,7 +91,8 @@ if(BUILD_TESTING)
             test_cl_buffer
             test_tree_evaluation
             test_issues
-            test_matmul)
+            test_matmul
+            test_random_generators)
 
     foreach(TARGET ${TESTS})
         add_executable(${TARGET} test/${TARGET}.cpp)

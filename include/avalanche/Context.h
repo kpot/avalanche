@@ -13,6 +13,20 @@ class Context;
 
 using ContextRef = std::shared_ptr<Context>;
 
+
+/**
+ * Context it's an environment consisting of multiple initialized GPU arrays,
+ * each attached to a computational graph node. This allows to keep the data
+ * (such as variables and constants) around during and between the computations.
+ * Without the Context, those variables and constants don't really exist.
+ *
+ * This makes the class the closest analog to TensorFlow's sessions,
+ * although `Context` doesn't run the computation itself (see `Executor`).
+ * And it doesn't store various temporary data during the computation
+ * (this is done by `ExecutionCache`).
+ *
+ * Each Context is strictly associated with only one GPU.
+ */
 class Context : private std::map<NodeId, MultiArrayRef> {
 public:
 

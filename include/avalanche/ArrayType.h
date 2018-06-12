@@ -5,7 +5,11 @@
 #ifndef AVALANCHE_ARRAYTYPE_H
 #define AVALANCHE_ARRAYTYPE_H
 
+#include <cstring>
+
 #include "CL_cust/cl2.hpp"
+
+#include "avalanche/casting.h"
 
 namespace avalanche {
 
@@ -71,6 +75,56 @@ inline std::size_t array_type_size(ArrayType t) {
         return 0;
     }
     return ArrayTypeSizes[static_cast<int>(t)];
+}
+
+
+/**
+ * similar to `to_array_type`, only more general
+ * Converts a `value` to a type represented by `dtype` and copies the result
+ * into a "one size fit all" uint64 value.
+ * Useful when you need to pass something to an OpenCL kernel.
+ */
+template <typename T>
+inline std::uint64_t cast_to_value_of_array_type(ArrayType dtype, T value) {
+    std::uint64_t result = 0;
+    switch (dtype) {
+        case ArrayType::float16: {
+            cl_half tmp_half = float_to_half(static_cast<float>(value));
+            std::memcpy(&result, &tmp_half, sizeof(tmp_half));
+            break;
+        }
+        case ArrayType::float32: {
+            auto tmp_float = static_cast<float>(value);
+            std::memcpy(&result, &tmp_float, sizeof(tmp_float));
+            break;
+        }
+        case ArrayType::float64: {
+            auto tmp_double = static_cast<float>(value);
+            std::memcpy(&result, &tmp_double, sizeof(tmp_double));
+            break;
+        }
+        case ArrayType::int8: {
+            auto tmp_int8 = static_cast<std::int8_t>(value);
+            std::memcpy(&result, &tmp_int8, sizeof(tmp_int8));
+            break;
+        }
+        case ArrayType::int16: {
+            auto tmp_int16 = static_cast<std::int16_t>(value);
+            std::memcpy(&result, &tmp_int16, sizeof(tmp_int16));
+            break;
+        }
+        case ArrayType::int32: {
+            auto tmp_int32 = static_cast<std::int32_t>(value);
+            std::memcpy(&result, &tmp_int32, sizeof(tmp_int32));
+            break;
+        }
+        case ArrayType::int64: {
+            auto tmp_int64 = static_cast<std::int64_t>(value);
+            std::memcpy(&result, &tmp_int64, sizeof(tmp_int64));
+            break;
+        }
+    }
+    return result;
 }
 
 } // namespace
