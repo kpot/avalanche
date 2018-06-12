@@ -38,6 +38,10 @@ public:
     static NodeRef make(const Shape &shape, double min_value,
                         double max_value, ArrayType dtype,
                         std::uint64_t seed) {
+        if (min_value > max_value) {
+            throw std::invalid_argument(
+                "Min random value should not be larger than max random value");
+        }
         return std::static_pointer_cast<BaseNode>(
             std::shared_ptr<UniformRandom>(
                 new UniformRandom(shape, min_value, max_value, dtype, seed)));

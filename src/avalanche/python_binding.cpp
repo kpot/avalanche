@@ -58,8 +58,8 @@ NodeRef SimpleBinaryOp(const NodeRef &a, const NodeRef &b) {
 }
 
 NodeRef matmul(const NodeRef &a, const NodeRef &b,
-                   const bool transpose_left = false,
-                   const bool transpose_right = false) {
+               const bool transpose_left = false,
+               const bool transpose_right = false) {
     return std::static_pointer_cast<BaseNode>(
         std::make_shared<BinaryOp<MatMul>>(
             a, b, transpose_left, transpose_right));
@@ -192,7 +192,7 @@ py::array array_to_numpy(MultiArrayRef &array) {
 
 
 Initializer numpy_value_initializer(py::array value) {
-    Initializer initializer = [value](Context &context) mutable {
+    Initializer initializer = [value](Context &context, ExecutionCache &cache) mutable {
         py::buffer_info info = value.request(false);
         if (!(value.flags() & py::array::c_style)) {
             throw std::invalid_argument("Only c-style arrays are supported");
@@ -207,6 +207,22 @@ Initializer numpy_value_initializer(py::array value) {
         return result;
     };
     return initializer;
+}
+
+
+NodeRef make_constant_from_numpy(py::array value, const std::string &name) {
+    py::buffer_info info = value.request(false);
+    if (!(value.flags() & py::array::c_style)) {
+        throw std::invalid_argument("Only c-style arrays are supported");
+    }
+    Shape shape(convert_shape(info.shape));
+    ArrayType array_type = dtype_to_avalanche_array_type(value.dtype());
+    return Constant::tensor(
+        name,
+        info.ptr,
+        static_cast<std::size_t>(info.size * info.itemsize),
+        array_type,
+        shape);
 }
 
 
@@ -246,8 +262,24 @@ PYBIND11_MODULE(pyvalanche, m) {
         .def("__str__", &BaseNode::to_string)
         .def("__repr__", &BaseNode::repr)
         .def("inputs", &BaseNode::inputs)
-        .def("dtype", &BaseNode::dtype)
-        .def_property_readonly("shape", &BaseNode::shape);
+        .def_property_readonly("dtype", &BaseNode::dtype)
+        .def_property_readonly("shape", &BaseNode::shape)
+        .def("__sub__", [](const NodeRef &node, const NodeRef &other) -> NodeRef {
+            return F<Minus>(node, other);
+        })
+        .def("__add__", [](const NodeRef &node, const NodeRef &other) -> NodeRef {
+            return F<Plus>(node, other);
+        })
+        .def("__mul__", [](const NodeRef &node, const NodeRef &other) -> NodeRef {
+            return F<Multiply>(node, other);
+        })
+        .def("__truediv__", [](const NodeRef &node, const NodeRef &other) -> NodeRef {
+            return F<Divide>(node, other);
+        })
+        .def("__rmul__", [](const NodeRef &node, float value) -> NodeRef {
+            return FU<Scale>(node, value);
+        })
+        ;
 
     py::class_<MultiArray, MultiArrayRef>(m, "MultiArray")
         .def("asnumpy", &array_to_numpy);
@@ -277,9 +309,21 @@ PYBIND11_MODULE(pyvalanche, m) {
 
     m.def("build_back_propagation_graph", &build_back_propagation_graph);
 
-    m.def("variable", &Variable::make, "Creates a new variable",
+    m.def("variable",
+          &Variable::make,
+          "Creates a new variable",
           py::arg("name"), py::arg("shape_dims"), py::arg("dtype"),
           py::arg("initializer"));
+
+    m.def("variable_from_node",
+          &Variable::make_from_node,
+          "Creates a new variable initialized from a different "
+          "computational node (tensor)",
+          py::arg("name"), py::arg("initializer"));
+
+    m.def("constant", &make_constant_from_numpy, "Creates a new constant");
+
+    m.def("random_uniform", &UniformRandom::make);
 
     m.def("value_initializer", &numpy_value_initializer);
 
@@ -288,7 +332,8 @@ PYBIND11_MODULE(pyvalanche, m) {
 #define REDUCE_ARGS \
         py::arg_v("node", "input tensor"), \
         py::arg_v("reduce_axis", std::vector<ShapeDim>(), "axis to reduce"), \
-        py::arg_v("keep_dims", false, "Keep reduced dimensions")
+        py::arg_v("keep_dims", false, \
+                  "True/False on should we keep the reduced dimensions or not")
 
     ops
         .def("relu", &FU<ReLU>)
@@ -296,6 +341,7 @@ PYBIND11_MODULE(pyvalanche, m) {
         .def("sigmoid", &FU<Sigmoid>)
         .def("log", &FU<Log>)
         .def("exp", &FU<Exp>)
+        .def("square", &FU<Square>)
         .def("plus", &SimpleBinaryOp<Plus>,
              "Elem-wise addition with broadcasting")
         .def("minus", &SimpleBinaryOp<Minus>,

@@ -211,6 +211,24 @@ public:
     const NodeRef partial_derivative(const NodeRef &input) const override;
 };
 
+class Square : public ConstTransform<0> {
+public:
+    Square(const NodeRef &input)
+        :ConstTransform<0>(
+        input,
+        {},
+        opencl_expression(input->dtype()),
+        "square(", ")",
+        {}) {
+    }
+
+    std::string opencl_expression(ArrayType dtype) const  {
+        return "v * v";
+    }
+
+    const NodeRef partial_derivative(const NodeRef &input) const override;
+};
+
 // Calculates reciprocal of a given number
 class Recip : public ConstTransform<0> {
 public:

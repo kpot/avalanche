@@ -12,6 +12,9 @@ _contexts_lock = threading.Lock()
 _uid_prefixes = collections.defaultdict(int)
 
 
+_IMAGE_DATA_FORMAT = 'channels_last'
+
+
 def floatx():
     from keras.backend.common import floatx as keras_floatx
     return keras_floatx()
@@ -114,10 +117,17 @@ def variable(value, dtype=None, name=None, constraint=None):
         dtype = floatx()
     if constraint is not None:
         raise NotImplementedError('Constraints are not supported')
-    variable = av.variable(name, value.shape, avalanche_dtype(dtype),
-                           av.value_initializer(value))
+    if is_tensor(value):
+        variable = av.variable_from_node(name, value)
+    else:
+        if not isinstance(value, np.ndarray):
+            value = np.array(value)
+        variable = av.variable(
+            name, value.shape, avalanche_dtype(dtype),
+            av.value_initializer(value))
     variable._uses_learning_phase = False
     variable._keras_shape = value.shape
+    variable._is_variable = True
     return variable
 
 
@@ -159,6 +169,7 @@ def placeholder(shape=None, ndim=None, dtype=None, sparse=False, name=None):
     p = av.variable(name, shape, avalanche_dtype(dtype), initializer)
     p._uses_learning_phase = False
     p._keras_shape = shape
+    p._is_placeholder = True
     return p
 
 
@@ -214,7 +225,7 @@ class Function(object):
         for node, value in zip(self.placeholders, inputs):
             self.context.init(node, value)
         results = self.executor.run()
-        return results
+        return [r.asnumpy() for r in results]
 
 
 def get_uid(prefix=''):
@@ -335,5 +346,296 @@ def int_shape(x):
     """
     if hasattr(x, '_keras_shape'):
         return x._keras_shape
+    elif hasattr(x, 'shape'):
+        return x.shape
     else:
         return None
+
+
+def random_uniform(shape, minval=0.0, maxval=1.0, dtype=None, seed=None):
+    """Returns a tensor with uniform distribution of values.
+
+    # Arguments
+        shape: A tuple of integers, the shape of tensor to create.
+        minval: A float, lower boundary of the uniform distribution
+            to draw samples.
+        maxval: A float, upper boundary of the uniform distribution
+            to draw samples.
+        dtype: String, dtype of returned tensor.
+        seed: Integer, random seed.
+
+    # Returns
+        A tensor.
+    """
+    if dtype is None:
+        dtype = floatx()
+    if seed is None:
+        seed = np.random.randint(10e6)
+    return av.random_uniform(av.Shape(shape), minval, maxval, avalanche_dtype(dtype), seed);
+
+
+def constant(value, dtype=None, shape=None, name=None):
+    """Creates a constant tensor.
+
+    # Arguments
+        value: A constant value (or list)
+        dtype: The type of the elements of the resulting tensor.
+        shape: Optional dimensions of resulting tensor.
+        name: Optional name for the tensor.
+
+    # Returns
+        A Constant Tensor.
+    """
+    if dtype is None:
+        dtype = floatx()
+    if isinstance(value, list):
+        value = np.array(value, dtype=dtype)
+    if shape is not None:
+        value = np.full(shape, value, dtype=dtype)
+    if name is None:
+        name = 'constant' + str(get_uid('constant'))
+    return av.constant(value, name)
+
+
+def dot(x, y):
+    """Multiplies 2 tensors (and/or variables) and returns a *tensor*.
+
+    When attempting to multiply a nD tensor
+    with a nD tensor, it reproduces the Theano behavior.
+    (e.g. `(2, 3) * (4, 3, 5) -> (2, 4, 5)`)
+
+    # Arguments
+        x: Tensor or variable.
+        y: Tensor or variable.
+
+    # Returns
+        A tensor, dot product of `x` and `y`.
+
+    # Examples
+    ```python
+        # dot product between tensors
+        >>> x = K.placeholder(shape=(2, 3))
+        >>> y = K.placeholder(shape=(3, 4))
+        >>> xy = K.dot(x, y)
+        >>> xy
+        <tf.Tensor 'MatMul_9:0' shape=(2, 4) dtype=float32>
+    ```
+
+    ```python
+        # dot product between tensors
+        >>> x = K.placeholder(shape=(32, 28, 3))
+        >>> y = K.placeholder(shape=(3, 4))
+        >>> xy = K.dot(x, y)
+        >>> xy
+        <tf.Tensor 'MatMul_9:0' shape=(32, 28, 4) dtype=float32>
+    ```
+
+    ```python
+        # Theano-like behavior example
+        >>> x = K.random_uniform_variable(shape=(2, 3), low=0, high=1)
+        >>> y = K.ones((4, 3, 5))
+        >>> xy = K.dot(x, y)
+        >>> K.int_shape(xy)
+        (2, 4, 5)
+    ```
+    """
+    if ndim(x) != 2 and ndim(y) != 2:
+        raise ValueError(
+            'dot product is currently implemented only for 2D tensors')
+    out = av.ops.matmul(x, y)
+    return out
+
+
+def image_data_format():
+    """Returns the default image data format convention ('channels_first' or 'channels_last').
+
+    # Returns
+        A string, either `'channels_first'` or `'channels_last'`
+
+    # Example
+    ```python
+        >>> keras.backend.image_data_format()
+        'channels_first'
+    ```
+    """
+    return _IMAGE_DATA_FORMAT
+
+
+def bias_add(x, bias, data_format=None):
+    """Adds a bias vector to a tensor.
+
+    # Arguments
+        x: Tensor or variable.
+        bias: Bias tensor to add.
+        data_format: string, `"channels_last"` or `"channels_first"`.
+
+    # Returns
+        Output tensor.
+
+    # Raises
+        ValueError: In one of the two cases below:
+                    1. invalid `data_format` argument.
+                    2. invalid bias shape.
+                       the bias should be either a vector or
+                       a tensor with ndim(x) - 1 dimension
+    """
+    if data_format is None:
+        data_format = image_data_format()
+    if data_format not in {'channels_first', 'channels_last'}:
+        raise ValueError('Unknown data_format: ' + str(data_format))
+    if data_format == 'channels_last':
+        return av.ops.plus(x, bias)
+    else:
+        bias_shape = int_shape(bias)
+        dims = [1] * ndim(x)
+        dims[:ndim(bias)] = bias_shape
+        return av.ops.plus(x, av.reshape(bias, av.Shape(dims)))
+
+
+def relu(x, alpha=0., max_value=None):
+    """Rectified linear unit.
+
+    With default values, it returns element-wise `max(x, 0)`.
+
+    # Arguments
+        x: A tensor or variable.
+        alpha: A scalar, slope of negative section (default=`0.`).
+        max_value: Saturation threshold.
+
+    # Returns
+        A tensor.
+    """
+    if alpha != 0.:
+        raise NotImplementedError(
+            "Leaky ReLU has not been implemented in avalanche yet")
+    else:
+        x = av.ops.relu(x)
+
+    if max_value is not None:
+        raise NotImplementedError(
+            "Saturation threashold for ReLU has not "
+            "been implemented in avalanche yet")
+    return x
+
+
+def sigmoid(x):
+    """Element-wise sigmoid.
+
+    # Arguments
+        x: A tensor or variable.
+
+    # Returns
+        A tensor.
+    """
+    return av.ops.sigmoid(x)
+
+
+def tanh(x):
+    """Element-wise tanh.
+
+    # Arguments
+        x: A tensor or variable.
+
+    # Returns
+        A tensor.
+    """
+    return av.ops.tanh(x)
+
+
+def is_sparse(tensor):
+    """Returns whether a tensor is a sparse tensor.
+
+    # Arguments
+        tensor: A tensor instance.
+
+    # Returns
+        A boolean.
+
+    # Example
+    ```python
+        >>> from keras import backend as K
+        >>> a = K.placeholder((2, 2), sparse=False)
+        >>> print(K.is_sparse(a))
+        False
+        >>> b = K.placeholder((2, 2), sparse=True)
+        >>> print(K.is_sparse(b))
+        True
+    ```
+    """
+    return False
+
+
+def dtype(x):
+    """Returns the dtype of a Keras tensor or variable, as a string.
+
+    # Arguments
+        x: Tensor or variable.
+
+    # Returns
+        String, dtype of `x`.
+
+    # Examples
+    ```python
+        >>> from keras import backend as K
+        >>> K.dtype(K.placeholder(shape=(2,4,5)))
+        'float32'
+        >>> K.dtype(K.placeholder(shape=(2,4,5), dtype='float32'))
+        'float32'
+        >>> K.dtype(K.placeholder(shape=(2,4,5), dtype='float64'))
+        'float64'
+        # Keras variable
+        >>> kvar = K.variable(np.array([[1, 2], [3, 4]]))
+        >>> K.dtype(kvar)
+        'float32_ref'
+        >>> kvar = K.variable(np.array([[1, 2], [3, 4]]), dtype='float32')
+        >>> K.dtype(kvar)
+        'float32_ref'
+    ```
+    """
+    prefix = 'ref_' if getattr(x, '_is_variable', False) else ''
+    return prefix + x.dtype.name
+
+
+def is_placeholder(x):
+    """Returns whether `x` is a placeholder.
+
+    # Arguments
+        x: A candidate placeholder.
+
+    # Returns
+        Boolean.
+    """
+    return getattr(x, '_is_placeholder', False)
+
+
+def mean(x, axis=None, keepdims=False):
+    """Mean of a tensor, alongside the specified axis.
+
+    # Arguments
+        x: A tensor or variable.
+        axis: A list of integer. Axes to compute the mean.
+        keepdims: A boolean, whether to keep the dimensions or not.
+            If `keepdims` is `False`, the rank of the tensor is reduced
+            by 1 for each entry in `axis`. If `keepdims` is `True`,
+            the reduced dimensions are retained with length 1.
+
+    # Returns
+        A tensor with the mean of elements of `x`.
+    """
+    if isinstance(axis, int):
+        axis = [axis]
+    elif axis is None:
+        axis = []
+    return av.ops.reduce_mean(x, axis, keepdims)
+
+
+def square(x):
+    """Element-wise square.
+
+    # Arguments
+        x: Tensor or variable.
+
+    # Returns
+        A tensor.
+    """
+    return av.ops.square(x)

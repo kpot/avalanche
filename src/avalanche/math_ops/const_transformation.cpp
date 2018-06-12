@@ -84,4 +84,7 @@ const NodeRef Exp::partial_derivative(const NodeRef &input) const {
     return FU<Exp>(input);
 }
 
+const NodeRef Square::partial_derivative(const NodeRef &input) const {
+    return FU<Scale>(input, 2);
+}
 } // namespace

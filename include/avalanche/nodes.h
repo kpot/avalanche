@@ -12,5 +12,6 @@
 #include "avalanche/math_ops/MatMul.h"
 #include "avalanche/math_ops/const_transformation.h"
 #include "avalanche/math_ops/reductions.h"
+#include "avalanche/random_nodes.h"
 
 #endif //AVALANCHE_MATH_OPS_H

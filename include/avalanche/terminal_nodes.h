@@ -4,13 +4,15 @@
 #include <string>
 #include <functional>
 #include <utility>
+
 #include "avalanche/BaseNode.h"
 #include "avalanche/Context.h"
-#include "ExecutionCache.h"
+#include "avalanche/ExecutionCache.h"
 
 namespace avalanche {
 
-using Initializer = std::function<MultiArrayRef(Context &context)>;
+using Initializer = std::function<
+    MultiArrayRef(Context &context, ExecutionCache &cache)>;
 
 
 /**
@@ -25,7 +27,7 @@ template <typename T>
 Initializer value_initializer(
         const std::vector<T> &data,
         const Shape &shape) {
-    Initializer initializer = [data, shape](Context &context) {
+    Initializer initializer = [data, shape](Context &context, ExecutionCache &cache) {
         auto result = context.device_pool()->make_array(shape, dtype_of_static_type<T>);
         result->write_from_vector(data);
         return result;
@@ -33,7 +35,25 @@ Initializer value_initializer(
     return initializer;
 }
 
+Initializer node_initializer(const NodeRef &node);
 
+
+/**
+ * The most important terminal node representing some permanent GPU array.
+ * Comparing with TF `Variable` plays both roles of `tf.Variable`
+ * and `tf.placeholder`.
+ *
+ * Since we can have multiple GPUs, this node doesn't actually store anything:
+ * the real data attached to the `Context` class,
+ * so the Variable is more like a pointer or a unique identifier for those.
+ *
+ * If the variable doesn't have an initializer, it will have to be initialized
+ * lately by calling `Context::init`. In such case it's more like
+ * a `placeholder` from TF.
+ *
+ * Once initialized by any means, the variable's data will keep living attached
+ * to the Context until it's destroyed.
+ */
 class Variable : public BaseNode {
 public:
     const std::string name;
@@ -64,15 +84,13 @@ public:
         return d_target_wrt_this;
     }
 
+    static NodeRef make_from_node(const std::string &name,
+                                  const NodeRef &initialize_from_node);
+
     static NodeRef make(const std::string &name,
                         const std::vector<ShapeDim> &shape_dims,
                         ArrayType dtype=ArrayType::float32,
-                        Initializer initializer=nullptr) {
-        Variable *raw_ptr = new Variable(
-            name, std::move(initializer), Shape(shape_dims), dtype);
-        return std::static_pointer_cast<BaseNode>(
-            std::shared_ptr<Variable>(raw_ptr));
-    }
+                        Initializer initializer=nullptr);
 
 private:
     Initializer _initializer;
@@ -137,18 +155,17 @@ public:
             throw std::invalid_argument(
                 "The length of the vector must match the size of the shape");
         }
-        return std::make_shared<Constant>(
+        return tensor(
             "tensor",
-            [shape, value](Context &context)->MultiArrayRef {
-                auto result = context.device_pool()->make_array(
-                    shape, dtype_of_static_type<T>);
-                // write_from_vector will update the result's completion event
-                result->buffer_unsafe()->write_from_vector(value);
-                return result;
-            },
-            shape,
-            dtype_of_static_type<T>);
+            value.data(),
+            sizeof(typename std::vector<T>::value_type) * value.size(),
+            dtype_of_static_type<T>,
+            shape);
     }
+
+    static const NodeRef tensor(const std::string &name, const void *data,
+                                std::size_t num_bytes, ArrayType dtype,
+                                const Shape &shape);
 
     static const NodeRef ones(Shape shape, ArrayType dtype) {
         return fill(shape, dtype, 1);
