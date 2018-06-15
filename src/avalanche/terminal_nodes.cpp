@@ -1,15 +1,14 @@
 #include <cstdint>
 #include <cstring>
-// FIXME: cleanup
-#include <iostream>
 
 #include <clblast.h>
-#include <fmt/format.h>
 
+#include "avalanche/base_ops_nodes.h"
 #include "avalanche/MultiArray.h"
 #include "avalanche/terminal_nodes.h"
 #include "avalanche/macroses.h"
 #include "avalanche/casting.h"
+#include "avalanche/logging.h"
 
 namespace avalanche {
 
@@ -17,8 +16,9 @@ template <typename T>
 void fill_array_with_value(cl::CommandQueue &queue,
                            MultiArrayRef &array,
                            float value) {
-    // FIXME: cleanup
-    std::cout << "Filling buffer " << array->buffer_unsafe().get() << std::endl;
+    get_logger()->debug(
+        "Filling buffer {}",
+        reinterpret_cast<void*>(array->buffer_unsafe().get()));
     cl::Event result_event;
     T casted_value = to_array_type<T>(value);
     queue.enqueueFillBuffer(
@@ -36,6 +36,9 @@ void fill_array_with_value(cl::CommandQueue &queue,
 ARRAY_DTYPE_SWITCH_FUNCTION(fill_array_switch, fill_array_with_value, void,);
 
 const NodeRef Constant::fill(Shape shape, ArrayType dtype, float value) {
+    if (!shape.is_complete()) {
+        throw std::invalid_argument("The shape must be fully defined");
+    }
     Initializer initializer = [shape, dtype, value](Context &context, ExecutionCache &cache) {
         auto result = context.device_pool()->make_array(shape, dtype);
         auto queue = result->buffer_unsafe()->pool()->cl_queue();
@@ -46,7 +49,7 @@ const NodeRef Constant::fill(Shape shape, ArrayType dtype, float value) {
         std::make_shared<Constant>(
             (std::string("Fill ") + shape.to_string() +
                 " with " + std::to_string(value)),
-            initializer, shape, dtype));
+            initializer, shape, dtype, NodeRefList()));
 }
 
 template <typename T>
@@ -71,9 +74,12 @@ MultiArrayRef Constant::eval(Context &context, ExecutionCache &cache) const {
         cached_value = _initializer(context, cache);
         check_compatibility(this, cached_value);
         cached_value->set_label(to_string());
-        context.init(id, cached_value);
-        // FIXME: cleanup
-        std::cout << "Constant " << this << " is now initialized" << std::endl;
+        if (_dependencies.empty()) {
+            // TODO: now we can safely cache the constant only if it doesn't depend from anything else
+            context.init(id, cached_value);
+        }
+        get_logger()->debug(
+            "Constant {} is now initialized", reinterpret_cast<const void*>(this));
     }
     return cached_value;
 }
@@ -96,7 +102,65 @@ Constant::tensor(const std::string &name,
             return result;
         },
         shape,
-        dtype);
+        dtype, NodeRefList());
+}
+
+const NodeRef Constant::fill_shape(const avalanche::NodeRef &shape_node,
+                                   ArrayType dtype,
+                                   float value) {
+    if (shape_node->dtype() != ShapeOf::dtype()) {
+        throw std::invalid_argument(
+            fmt::format("Given node has data type {} while {} is required",
+                        array_type_name(shape_node->dtype()),
+                        array_type_name(ShapeOf::dtype())));
+    }
+    if (shape_node->shape().rank() > 1) {
+        throw std::invalid_argument(
+            fmt::format(
+                "Shape node must output not more than 1-D vector. "
+                "Currently it's {}-D",
+                shape_node->shape().rank()));
+    }
+    Initializer initializer = [shape_node, value, dtype](
+            Context &context, ExecutionCache &cache) {
+        auto shape_array = shape_node->eval(context, cache);
+        std::vector<ShapeDim> shape_dims;
+        shape_array->fetch_data_into(shape_dims);
+
+        auto result = context.device_pool()->make_array(shape_dims, dtype);
+        auto queue = result->buffer_unsafe()->pool()->cl_queue();
+        fill_array_switch(dtype, queue, result, value);
+        return result;
+    };
+    // We don't know the shape at this stage, but we know it's rank at least
+    std::vector<ShapeDim> proto_dims(
+        static_cast<std::size_t>(
+            shape_node->shape().rank() == 1 ? shape_node->shape().dim(0) : 0));
+    std::fill(proto_dims.begin(), proto_dims.end(), UnknownDim);
+    NodeRefList dependencies({F<NoBackProp>(shape_node)});
+    return std::static_pointer_cast<BaseNode>(
+        std::make_shared<Constant>(
+            fmt::format("Fill shape {} with {}", shape_node->repr(), value),
+            initializer, proto_dims, dtype, dependencies));
+}
+
+const NodeRef Constant::fill_like(const NodeRef &other_node, float value) {
+    Initializer initializer = [value, other_node](
+            Context &context, ExecutionCache &cache) {
+        auto real_value = other_node->eval(context, cache);
+        auto result = context.device_pool()->make_array(
+            real_value->shape(), real_value->dtype());
+        auto queue = result->buffer_unsafe()->pool()->cl_queue();
+        fill_array_switch(real_value->dtype(), queue, result, value);
+        return result;
+    };
+    return std::static_pointer_cast<BaseNode>(
+        std::make_shared<Constant>(
+            fmt::format("Fill shape like {} with {}",
+                        other_node->repr(), value),
+            initializer, other_node->shape(),
+            other_node->dtype(),
+            NodeRefList({F<NoBackProp>(other_node)})));
 }
 
 MultiArrayRef Variable::eval(Context &context, ExecutionCache &cache) const {
@@ -107,9 +171,6 @@ MultiArrayRef Variable::eval(Context &context, ExecutionCache &cache) const {
             check_compatibility(this, cached_value);
             cached_value->set_label(to_string());
             context.init(id, cached_value);
-            // FIXME: cleanup
-            std::cout << "Variable " << this << " is now initialized"
-                      << std::endl;
         } else {
             throw std::runtime_error(
                 "Cannot find an initial value for variable " + name);

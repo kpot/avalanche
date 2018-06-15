@@ -5,13 +5,7 @@
 #include <algorithm>
 #include <numeric>
 
-
-#include "catch.hpp"
-
-#include "avalanche/terminal_nodes.h"
-#include "avalanche/nodes.h"
-#include "avalanche/Shape.h"
-#include "avalanche/Executor.h"
+#include "avalanche/testing_tools.h"
 
 
 TEST_CASE("Checking broadcasting shapes") {
@@ -60,8 +54,6 @@ TEST_CASE("Checking broadcasting shapes") {
         }
     }
 }
-
-
 
 
 template <typename T, typename Op>
@@ -260,37 +252,6 @@ TEST_CASE("Testing matrix multiplication") {
     }
 }
 
-template <typename T>
-void require_almost_equal(const std::vector<T> &expected,
-                          std::vector<T> &result,
-                          float epsilon,
-                          float margin=5e-5) {
-    REQUIRE(result.size() == expected.size());
-    auto mismatches = std::mismatch(
-        result.begin(), result.end(), expected.begin(),
-        [&](T r, T e) { return r == Approx(e).epsilon(epsilon).margin(margin); });
-    CAPTURE(result);
-    CAPTURE(expected);
-    CAPTURE(epsilon);
-    REQUIRE(mismatches.first == result.end());
-}
-
-template <typename T>
-void evaluate_and_check(const avalanche::NodeRef &output,
-                        const std::vector<T> &expected,
-                        const avalanche::Shape &expected_shape,
-                        avalanche::ContextRef context=nullptr) {
-    using namespace avalanche;
-    if (!context) {
-        context = Context::make_for_device(0);
-    }
-    Executor executor(context, {output});
-    auto results = executor.run();
-    std::vector<T> cpu_copy;
-    results[0]->fetch_data_into(cpu_copy);
-    require_almost_equal(expected, cpu_copy, 1e-6);
-    REQUIRE(results[0]->shape() == expected_shape);
-}
 
 
 TEST_CASE("Testing scaling") {
@@ -428,6 +389,28 @@ TEST_CASE("Test various transformations") {
             Shape());
     }
 
+    SECTION("ReduceSum to be like some other node") {
+        auto data1 = Variable::make("data1", {3, 2}, ArrayType::float32);
+        auto data2 = Variable::make("data2", {3, 1}, ArrayType::float32);
+        auto output = F<ReduceSum>(data1, F<NoBackProp>(data2), true);
+        REQUIRE(output->shape() == Shape({3, 1}));
+        auto context = Context::make_for_device(0);
+        context->init<float>(
+            data1,
+            {0.0f, 1.0f, 1.0f, 2.0f, 2.0f, 3.0f},
+            data1->shape());
+        context->init<float>(
+            data2,
+            {1.0f, 2.0f, 3.0f},
+            data2->shape());
+        Executor executor(context, {output});
+        auto results = executor.run();
+        REQUIRE(results[0]->shape() == Shape({3, 1}));
+        std::vector<float> fetched;
+        results[0]->fetch_data_into(fetched);
+        REQUIRE(fetched == std::vector<float>({1.0f, 3.0f, 5.0f}));
+    }
+
     SECTION("ReduceMean") {
         // Partial reduction over last dimension
         auto val = Constant::tensor<float>(
@@ -448,51 +431,22 @@ TEST_CASE("Test various transformations") {
         auto output3 = FU<ReduceMean>(val);
         evaluate_and_check<float>(output3, {5.5}, Shape());
     }
-}
 
 
-template <typename T>
-void verify_derivatives(avalanche::ContextRef context,
-                        const avalanche::NodeRefList &variables,
-                        const avalanche::NodeRef output,
-                        const T epsilon) {
-    std::vector<T> variable_state;
-    std::vector<T> function_results;
-    auto grad_table = avalanche::build_back_propagation_graph(output, variables);
-    avalanche::Executor executor(context, {output});
-
-    for (auto &var_node: variables) {
-        auto grad_output = grad_table[var_node];
-        REQUIRE(grad_output->shape().dims() == var_node->shape().dims());
-        std::cout << grad_output->to_string() << std::endl;
-        avalanche::Executor diff_executor(context, {grad_output});
-        auto var_array = context->eval(var_node);
-        var_array->fetch_data_into(variable_state);
-        std::vector<T> finite_diff_derivative(variable_state.size());
-        auto gradient_results = diff_executor.run();
-        std::vector<T> gradient;
-        gradient_results[0]->fetch_data_into(gradient);
-        std::vector<T> orig_variable_state(variable_state);
-        for (std::size_t var_idx = 0; var_idx < variable_state.size(); ++var_idx) {
-            T old_value = variable_state[var_idx];
-            T results[2];
-            for (int i = 0; i < 2; ++i) {
-                int sign = (2 * i - 1);
-                variable_state[var_idx] = old_value + sign * epsilon / 2.0;
-                var_array->write_from_vector(variable_state);
-                auto run_results = executor.run();
-                run_results[0]->fetch_data_into(function_results);
-                results[i] = 0;
-                for (auto v: function_results) { results[i] += v; }
-            }
-            finite_diff_derivative[var_idx] = (results[1] - results[0]) / epsilon;
-            variable_state[var_idx] = old_value;
-        }
-        var_array->write_from_vector(orig_variable_state);
-        REQUIRE(gradient_results[0]->shape().dims() == var_node->shape().dims());
-        require_almost_equal(finite_diff_derivative, gradient, 1e-2);
+    SECTION("ProductOfDims") {
+        auto inputs = Variable::make("inputs", {3, 3}, ArrayType::float32);
+        auto context = Context::make_for_device(0);
+        context->init<float>(
+            inputs,
+            {0.0f, 1.0f, 2.0,
+             3.0, 4.0, 5.0,
+             6.0, 7.0, 8.0},
+            inputs->shape());
+        auto output = FU<ProductOfDims>(inputs, std::vector<ShapeDim>(), ArrayType::float32);
+        evaluate_and_check<float>(output, {9.0f}, Shape(), context);
     }
 }
+
 
 TEST_CASE("Checking automatic derivations (backprop)") {
     using namespace avalanche;

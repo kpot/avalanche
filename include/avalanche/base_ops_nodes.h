@@ -1,5 +1,9 @@
 //
-// Created by Kirill on 04/02/18.
+// Simple templates allowing quickly construct many similarly-behaving
+// computational nodes from any class without the need to directly inherit
+// it from `BaseNode`. This ensures more generalized behaviour and allows
+// for some tricks like making some methods static if necessary, building
+// complex class hierarchies, building nodes from structs, etc.
 //
 
 #ifndef AVALANCHE_BASE_OPS_NODES_H
@@ -7,7 +11,7 @@
 
 #include "avalanche/BaseNode.h"
 #include "avalanche/Context.h"
-#include "ExecutionCache.h"
+#include "avalanche/ExecutionCache.h"
 
 namespace avalanche {
 
@@ -52,8 +56,20 @@ public:
                      const NodeRefList &all_inputs) const override {
         return op.apply_chain_rule(wrt_input, d_target_wrt_this, all_inputs);
     }
+
+    bool use_in_back_propagation() const override {
+        return op.use_in_back_propagation();
+    };
 };
 
+
+template <typename Op>
+class OpListsInputs {
+    template <typename C> static char test(typeof(&C::inputs)) { return 0; }
+    template <typename C> static long test(...) { return 0; }
+public:
+    enum {value = (sizeof(test<Op>(0) == sizeof(char)))};
+};
 
 template <typename Op>
 class BinaryOp : public BaseNode {

@@ -11,25 +11,6 @@
 
 namespace avalanche {
 
-class Reshape {
-public:
-    Reshape(const NodeRef &input, const Shape &new_shape);
-    const Shape& shape() const { return _new_shape; }
-    ArrayType dtype() const { return _result_dtype; }
-
-    std::string lh_name() const { return "reshape("; }
-    std::string rh_name() const { return ", " + _new_shape.to_string() + ")"; }
-
-    MultiArrayRef forward(const MultiArrayRef &value) const;
-
-    const NodeRef apply_chain_rule(
-        const NodeRef &wrt_input,
-        const NodeRef &d_target_wrt_this,
-        const NodeRefList &all_inputs) const;
-private:
-    const Shape _new_shape;
-    const ArrayType _result_dtype;
-};
 
 class Reduction {
 public:
@@ -43,6 +24,8 @@ public:
               std::vector<ShapeDim> reduce_axis,
               bool keep_dims = false);
 
+    Reduction(const NodeRef &input, const NodeRef &to_be_like, bool keep_dims);
+
     const Shape& shape() const {
         return _keep_dims ? _result_shape_dims_kept : _result_shape_dims_cut;
     }
@@ -52,9 +35,11 @@ public:
         return std::string("reduce") + kernel_op_name() + "(";
     }
     std::string rh_name() const;
-
+    std::string name() const;
 
     MultiArrayRef forward(const MultiArrayRef &value) const;
+    MultiArrayRef forward(const MultiArrayRef &value,
+                          const MultiArrayRef &to_be_like_value) const;
 
     const NodeRef apply_chain_rule(
         const NodeRef &wrt_input,
@@ -65,6 +50,7 @@ public:
         throw std::logic_error("not implemented");
     }
 
+    bool use_in_back_propagation() const { return true; };
 
 protected:
     struct ReductionStep {
@@ -78,22 +64,36 @@ protected:
         std::size_t dim_size;
     };
 
+    // The variables below are merely estimations made when the graph
+    // was being constructed
     Shape _result_shape_dims_cut;
     Shape _result_shape_dims_kept;
     ArrayType _result_dtype;
-    std::vector<ReductionStep> _reduction_steps;
     std::vector<ShapeDim> _dims_to_cut;
     const bool _keep_dims;
+    const NodeRef _to_be_like;
 
     virtual std::string kernel_op_name() const =0;
 
 private:
-    mutable std::string _kernel_name;
 
-    MultiArrayRef partial_reduction(const MultiArrayRef &value) const;
+    MultiArrayRef partial_reduction(
+        const MultiArrayRef &value,
+        const std::vector<ReductionStep> &reduction_steps,
+        const Shape &result_shape_dims_cut,
+        const Shape &result_shape_dims_kept) const;
     MultiArrayRef full_reduction(const MultiArrayRef &value) const;
 
-    const std::string& cached_kernel_name() const;
+    const std::string get_kernel_name(bool is_partial_reduction) const;
+    void estimate_steps_and_dimensions(
+        const Shape &input_shape,
+        const std::vector<ShapeDim> &dims_to_cut,
+        std::vector<ReductionStep> &reduction_steps,
+        Shape &result_shape_dims_cut,
+        Shape &result_shape_dims_kept) const;
+
+    std::vector<ShapeDim> estimate_dims_to_cut(
+        const Shape &input_shape, const Shape &to_be_like_shape) const;
 };
 
 class ReduceSum : public Reduction {

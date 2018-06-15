@@ -13,7 +13,8 @@ std::size_t avalanche::Shape::size() const {
     if (std::any_of(_dims.begin(), _dims.end(),
                     [](ShapeDim dim) { return dim <= 0; })) {
         throw std::out_of_range(
-            "Cannot calculate the size of a shape having dimensions <= 0");
+            "Cannot calculate the size of a shape having dimensions "
+            "of 0 size or undefined");
     }
     std::size_t result = 1;
     for (auto dim: _dims) { result *= dim; }
@@ -80,7 +81,12 @@ std::string Shape::to_string() const {
     std::ostringstream result;
     result << "Shape(";
     for (std::size_t i = 0; i < _dims.size(); ++i) {
-        result << _dims[i] << (i == _dims.size() - 1 ? "" : ", ");
+        if (_dims[i] < 0) {
+            result << "?";
+        } else {
+            result << _dims[i];
+        }
+        result << (i == _dims.size() - 1 ? "" : ", ");
     }
     result << ")";
     return result.str();
@@ -99,19 +105,20 @@ void expand_shape_dims(std::vector<ShapeDim> &smaller,
 
 
 void Shape::align_for_broadcasting(const Shape &shape1, const Shape &shape2,
+                                   // Outputs
                                    Shape &shape1_aligned, Shape &shape2_aligned,
                                    Shape &result_shape) {
     shape1_aligned = shape1;
     shape2_aligned = shape2;
     {
-        std::size_t size1 = shape1._dims.size(), size2 = shape2._dims.size();
+        std::size_t size1 = shape1.rank(), size2 = shape2.rank();
         if (size1 < size2) {
             expand_shape_dims(shape1_aligned._dims, shape2_aligned._dims);
         } else if (size1 > size2) {
             expand_shape_dims(shape2_aligned._dims, shape1_aligned._dims);
         }
     }
-    result_shape._dims.resize(shape1_aligned._dims.size());
+    result_shape._dims.resize(shape1_aligned.rank());
     for (auto s1 = shape1_aligned._dims.begin(),
              s2 = shape2_aligned._dims.begin(),
              res = result_shape._dims.begin();
@@ -122,7 +129,11 @@ void Shape::align_for_broadcasting(const Shape &shape1, const Shape &shape2,
                 fmt::format("Cannot align shapes {} and {} for broadcasting",
                             shape1.to_string(), shape2.to_string()));
         }
-        *res = std::max(*s1, *s2);
+        if (*s1 == UnknownDim || *s2 == UnknownDim) {
+            *res = UnknownDim;
+        } else {
+            *res = std::max(*s1, *s2);
+        }
     }
 };
 
@@ -161,6 +172,58 @@ std::string Shape::dims_to_string(const std::vector<ShapeDim> &dims) {
     }
     result << "}";
     return result.str();
+}
+
+bool Shape::is_complete() const {
+    return std::find(_dims.begin(), _dims.end(), UnknownDim) == _dims.end();
+}
+
+bool Shape::agrees_with(const Shape &needed) const {
+    if (rank() != needed.rank()) return false;
+    for (std::size_t i = 0; i < _dims.size(); ++i) {
+        if (_dims[i] != needed._dims[i] && needed._dims[i] != UnknownDim) {
+            return false;
+        }
+    }
+    return true;
+}
+
+template <typename Container>
+inline void leave_unique_only(Container &container) {
+    std::sort(container.begin(), container.end());
+    auto last = std::unique(container.begin(), container.end());
+    container.erase(last, container.end());
+}
+
+std::vector<ShapeDim> Shape::normalize_dims(const std::vector<ShapeDim> &dims) const {
+    auto input_rank = rank();
+    std::vector<ShapeDim> result = dims;
+    for (auto &dim: result) {
+        auto orig_dim = dim;
+        if (dim < 0) {
+            dim = static_cast<ShapeDim>(input_rank) + dim;
+        }
+        if (dim >= input_rank || dim < 0) {
+            throw std::invalid_argument(
+                fmt::format("One of the axis ({}) doesn't exist", orig_dim));
+        }
+    }
+    leave_unique_only(result);
+    return result;
+}
+
+std::vector<ShapeDim>
+Shape::dims_difference(const Shape &aligned_shape, const Shape &result_shape) {
+    std::vector<ShapeDim> result;
+    if (aligned_shape.rank() != result_shape.rank()) {
+        throw std::invalid_argument("The shapes must be aligned!");
+    }
+    for (ShapeDim i = 0; i < aligned_shape.rank(); ++i) {
+        if (aligned_shape.dims()[i] != result_shape.dims()[i]) {
+            result.push_back(i);
+        }
+    }
+    return result;
 }
 
 } // namespace

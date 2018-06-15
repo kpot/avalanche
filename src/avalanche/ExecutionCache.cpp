@@ -88,5 +88,14 @@ void ExecutionCache::check_multi_array_compatibility(const MultiArrayRef &array)
     }
 }
 
+bool ExecutionCache::get_info(NodeId node_id, CachedItem &info) const {
+    auto cached = find(node_id);
+    if (cached != this->end()) {
+        info = cached->second;
+        return true;
+    }
+    return false;
+}
+
 
 } // namespace

@@ -34,10 +34,12 @@ void CLMemoryManager::init_for_all(const cl_device_type device_type) {
                     std::cout << "Registered OpenCL device "
                               << device_name << "\n";
                     cl::CommandQueue queue;
+                    bool supports_ooo_execution;
                     try {
                         queue = cl::CommandQueue(
                             context, device,
                             CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE);
+                        supports_ooo_execution = true;
                     } catch (cl::Error &e) {
                         if (e.err() == CL_INVALID_VALUE ||
                                 e.err() == CL_INVALID_QUEUE_PROPERTIES) {
@@ -50,6 +52,7 @@ void CLMemoryManager::init_for_all(const cl_device_type device_type) {
                             // between these two error codes.
                             queue = cl::CommandQueue(context, device, 0);
                         }
+                        supports_ooo_execution = false;
                     }
 
 //                        (device_name == "Iris" ?
@@ -58,7 +61,8 @@ void CLMemoryManager::init_for_all(const cl_device_type device_type) {
                         std::make_shared<CLBufferPool>(
                             this, _device_counter, context, queue));
                     _device_info.push_back(
-                        DeviceInfo({device_name, platform_name, _device_counter}));
+                        DeviceInfo({device_name, platform_name,
+                                    _device_counter, supports_ooo_execution}));
                     ++_device_counter;
                 } else {
                     std::cout << "The device '" << device_name
@@ -90,6 +94,7 @@ std::shared_ptr<CLMemoryManager> CLMemoryManager::get_default() {
 }
 
 CLMemoryManager::~CLMemoryManager() {
+    // FIXME: Cleanup
     std::cout << "CLMemory manager has been destroyed\n";
 }
 

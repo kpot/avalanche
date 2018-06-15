@@ -40,23 +40,16 @@ cl::Event call_broadcasted_kernel(
 
 
 struct BroadcastedBinaryOp {
-    std::vector<cl_ulong> left_size_mask;
-    std::vector<cl_ulong> right_size_mask;
-    std::vector<cl_ulong> result_sub_sizes;
-    std::vector<ShapeDim> left_vs_result_shape_diff;
-    std::vector<ShapeDim> right_vs_result_shape_diff;
-    Shape aligned_shape_left;
-    Shape aligned_shape_right;
-    Shape result_shape;
-    ArrayType result_dtype;
+    Shape _result_shape;
+    ArrayType _result_dtype;
     mutable std::string _kernel_name;
 
     Shape shape() const {
-        return result_shape;
+        return _result_shape;
     }
 
     ArrayType dtype() const {
-        return result_dtype;
+        return _result_dtype;
     }
 
     virtual const char* kernel_op_name() const = 0;
@@ -65,7 +58,7 @@ struct BroadcastedBinaryOp {
         if (_kernel_name.empty()) {
             _kernel_name = (
                 std::string("broadcasted_") + kernel_op_name() + "_" +
-                array_type_name(result_dtype));
+                array_type_name(_result_dtype));
         }
         return _kernel_name;
     }
@@ -74,6 +67,8 @@ struct BroadcastedBinaryOp {
 
     MultiArrayRef forward(const MultiArrayRef &v1,
                           const MultiArrayRef &v2) const;
+
+    bool use_in_back_propagation() const { return true; };
 };
 
 } // namespace

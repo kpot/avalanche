@@ -1,7 +1,3 @@
-//
-// Created by Kirill on 10/02/18.
-//
-
 #ifndef AVALANCHE_OPENCL_UTILS_H
 #define AVALANCHE_OPENCL_UTILS_H
 

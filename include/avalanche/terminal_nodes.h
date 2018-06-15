@@ -8,6 +8,7 @@
 #include "avalanche/BaseNode.h"
 #include "avalanche/Context.h"
 #include "avalanche/ExecutionCache.h"
+#include "avalanche/shape_nodes.h"
 
 namespace avalanche {
 
@@ -109,9 +110,11 @@ class Constant : public BaseNode {
 public:
 
     explicit Constant(std::string name, Initializer initializer,
-                      Shape shape, ArrayType dtype)
+                      Shape shape, ArrayType dtype,
+                      const NodeRefList &dependencies)
         :_initializer{initializer},
-         _name{name}
+         _name{name},
+         _dependencies{dependencies}
     {
         set_dtype(dtype);
         set_shape(shape);
@@ -128,7 +131,7 @@ public:
     }
 
     NodeRefList inputs() const override {
-        return NodeRefList();
+        return _dependencies;
     }
 
     const NodeRef
@@ -180,7 +183,7 @@ public:
     }
 
     static const NodeRef ones_like(const NodeRef &other_node) {
-        return ones(other_node->shape(), other_node->dtype());
+        return fill_like(other_node, 1);
     }
 
     static const NodeRef minus_one(Shape shape, ArrayType dtype) {
@@ -192,13 +195,18 @@ public:
     }
 
     static const NodeRef zeros_like(const NodeRef &other_node) {
-        return zeros(other_node->shape(), other_node->dtype());
+        return fill_like(other_node, 0);
     }
+
+    static const NodeRef fill_shape(const NodeRef &shape_node, ArrayType dtype,
+                                    float value);
+
+    static const NodeRef fill_like(const NodeRef &other_node, float value);
 
 private:
     Initializer _initializer;
     std::string _name;
-
+    NodeRefList _dependencies;
 };
 
 

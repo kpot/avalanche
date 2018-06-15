@@ -1,7 +1,3 @@
-//
-// Created by Kirill on 15/02/18.
-//
-
 #ifndef AVALANCHE_MATH_OPS_COMMON_H
 #define AVALANCHE_MATH_OPS_COMMON_H
 

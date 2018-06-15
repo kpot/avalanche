@@ -1,7 +1,3 @@
-//
-// Created by Kirill on 28/01/18.
-//
-
 #ifndef AVALANCHE_MULTIARRAY_H
 #define AVALANCHE_MULTIARRAY_H
 
@@ -69,6 +65,16 @@ public:
         return std::shared_ptr<MultiArray>(
             new MultiArray(_buffer, _shape, _dtype));
     }
+
+
+    /**
+     * To keep the buffers alive until the computation is done we add them
+     * as dependencies to the others.
+     * It's better to do this later in the code, because we don't want
+     * the compiler to destroy the buffers after their last mentioning,
+     * which can lead  to troubles like accidental re-use of the same
+     * OpenCL buffer for adjacent operations.
+     */
     void add_dependencies(std::initializer_list<CLBufferRef> dependencies);
     void add_dependencies(std::initializer_list<MultiArrayRef> dependencies);
     void set_label(const std::string &label) { _buffer->set_label(label); }

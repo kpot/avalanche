@@ -4,14 +4,17 @@
 #include <vector>
 #include <string>
 #include <array>
+#include <cstdint>
 
 namespace avalanche {
 
-using ShapeDim = long long;
+using ShapeDim = std::int64_t;
+constexpr ShapeDim UnknownDim = -1;
 
 class Shape {
 
 public:
+
     Shape() {}
 //    explicit Shape(std::vector<ShapeDim> dims);
     Shape(const std::vector<ShapeDim> &dims);
@@ -30,6 +33,8 @@ public:
     bool operator==(const Shape &other) const { return other._dims == _dims; }
     bool operator!=(const Shape &other) const { return other._dims != _dims; }
     std::string to_string() const;
+    bool is_complete() const;
+    bool agrees_with(const Shape &needed) const;
 
     /**
      * Unifies two shapes so they could be used in element-wise broadcasted
@@ -51,6 +56,20 @@ public:
         Shape &shape1_aligned, Shape &shape2_aligned,
         Shape &result_shape);
     static std::string dims_to_string(const std::vector<ShapeDim> &dims);
+    /**
+     * For a given list of dimensions, removes all duplicates and replaces
+     * negative values (from the end) with their absolute equivalents.
+     * */
+    std::vector<ShapeDim> normalize_dims(const std::vector<ShapeDim> &dims) const;
+
+
+    /**
+     * Creates a full list of dimensions being added to the argument's
+     *  shape during broadcasting. Useful for later calculation of derivatives.
+     */
+    static std::vector<ShapeDim> dims_difference(const Shape &aligned_shape,
+                                                 const Shape &result_shape);
+
 
 private:
     std::vector<ShapeDim> _dims;

@@ -1,6 +1,7 @@
 #include <iostream>
 #include <chrono>
 
+#include "avalanche/logging.h"
 #include "avalanche/CLBuffer.h"
 #include "avalanche/CLBufferPool.h"
 #include "avalanche/opencl_utils.h"
@@ -9,13 +10,15 @@
 namespace avalanche {
 
 void buffer_event_occurred(cl_event event, cl_int status, void *user_data) {
+    auto logger = get_logger();
     auto buffer = static_cast<CLBuffer*>(user_data);
     if (event != buffer->_ready_event.get()) {
-        std::cerr << "Buffer " << buffer->_label
-                  << " Received a call back from an already cancelled event!\n";
+        logger->error("Buffer {} Received a call back "
+                      "from an already cancelled event!", buffer->_label);
         return;
     }
-//    std::cout << "Buffer " << buffer << " received callback" << std::endl;
+    // FIXME: Wrap into logging
+    logger->debug("Buffer {} ({}) Received a callback", buffer->_label, (void*)buffer);
     buffer->clear_dependencies();
     if (status < 0) {
         buffer->_ready_promise.set_exception(
@@ -55,12 +58,10 @@ void CLBuffer::set_completion_event(const cl::Event &event) {
 CLBuffer::~CLBuffer() {
     if (_pool) {
         // cannot be destroyed until the event is done
+        get_logger()->debug("Returning buffer {} the size of {} bytes back to the bucket {}", _label, _size, _bucket);
         wait_until_ready();
         _dependencies.clear();
         _ready_event = nullptr;
-//        std::cout << "Returning buffer " << _label
-//                  << " the size of " << _size << " bytes "
-//                  << " back to bucket " << _bucket << "\n";
         _pool->return_buffer(std::move(_cl_buffer), _bucket);
         _cl_buffer = nullptr;
         _pool = nullptr;
@@ -98,6 +99,10 @@ const cl::Buffer& CLBuffer::cl_buffer_when_ready() const {
     return _cl_buffer;
 }
 
+/**
+ * Be careful with writing the data because the memory buffer must remain
+ * valid until the writing is done.
+ */
 const cl::Event &
 CLBuffer::write_data(const void *data, const std::size_t num_bytes) {
     if (num_bytes > byte_size()) {

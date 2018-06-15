@@ -11,6 +11,7 @@ endif()
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 
 find_package(OpenCL REQUIRED)
+find_package(Threads REQUIRED)
 
 set(BUILD_SHARED_LIBS OFF)
 add_subdirectory(libs/pybind11)
@@ -43,6 +44,7 @@ endforeach()
 add_custom_target(avalanche_kernels SOURCES ${COMPILED_RESOURCES})
 
 add_library(avalanche_static STATIC
+        src/avalanche/logging.cpp
         src/avalanche/CLMemoryManager.cpp
         src/avalanche/CLBuffer.cpp
         src/avalanche/CLBufferPool.cpp
@@ -60,6 +62,7 @@ add_library(avalanche_static STATIC
         src/avalanche/opencl_utils.cpp
         src/avalanche/casting.cpp
         src/avalanche/random_nodes.cpp
+        src/avalanche/shape_nodes.cpp
         src/avalanche/math_ops/BroadcastedBinaryOp.cpp
         src/avalanche/math_ops/simple_arithemic.cpp
         src/avalanche/math_ops/MatMul.cpp
@@ -67,10 +70,11 @@ add_library(avalanche_static STATIC
         src/avalanche/math_ops/reductions.cpp)
 target_compile_features(avalanche_static PRIVATE cxx_std_14)
 target_link_libraries(avalanche_static
-        PUBLIC ${OpenCL_LIBRARY}
+        PUBLIC ${OpenCL_LIBRARY} Threads::Threads
         PRIVATE clblast fmt-header-only)
 target_include_directories(avalanche_static
-        PUBLIC libs/cl_crossplatform include ${OpenCL_INCLUDE_DIRS})
+        PUBLIC libs/cl_crossplatform include ${OpenCL_INCLUDE_DIRS}
+            libs/spdlog/include)
 target_include_directories(avalanche_static
         PUBLIC SYSTEM libs/cl_crossplatform)
 target_include_directories(avalanche_static

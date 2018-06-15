@@ -28,18 +28,9 @@ public:
                          std::size_t reuse_counter);
     bool get(NodeId node_id, MultiArrayRef &result);
     // For testing purposes
-    bool get_info(NodeId node_id, CachedItem &info) const {
-        auto cached = find(node_id);
-        if (cached != this->end()) {
-            info = cached->second;
-            return true;
-        }
-        return false;
-    }
+    bool get_info(NodeId node_id, CachedItem &info) const;
     // For testing
-    std::size_t size() {
-        return CachedItemsMap::size();
-    }
+    std::size_t size() { return CachedItemsMap::size(); }
 
 private:
     BufferPoolRef _buffer_pool;

@@ -1,7 +1,3 @@
-//
-// Created by Kirill on 25/01/18.
-//
-
 #ifndef AVALANCHE_MEMORY_MANAGER_H
 #define AVALANCHE_MEMORY_MANAGER_H
 
@@ -19,6 +15,7 @@ struct DeviceInfo {
     std::string name;
     std::string platform;
     DeviceIndex id;
+    bool supports_out_of_order_execution;
 };
 
 class CLMemoryManager {

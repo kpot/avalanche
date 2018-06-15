@@ -1,7 +1,3 @@
-//
-// Created by Kirill on 18/02/18.
-//
-
 #ifndef AVALANCHE_ARRAYTYPE_H
 #define AVALANCHE_ARRAYTYPE_H
 
@@ -27,7 +23,8 @@ const char ArrayTypeNumpyNames[][7] = {
     "f2", "f4", "f8", "i1", "i2", "i4", "i8"};
 const char ArrayTypeVerboseNames[][9] = {
     "float16", "float32", "float64", "int8", "int16", "int32", "int64"};
-const std::size_t ArrayTypeSizes[] = {2, 4, 8, 1, 2, 4, 8};
+const std::size_t ArrayTypeSizes[] = {
+    sizeof(cl_half), sizeof(cl_float), sizeof(cl_double), 1, 2, 4, 8};
 
 template<class T> constexpr ArrayType dtype_of_static_type = ArrayType::int8;
 template<> constexpr ArrayType dtype_of_static_type<cl_short> = ArrayType::int16;
@@ -99,7 +96,7 @@ inline std::uint64_t cast_to_value_of_array_type(ArrayType dtype, T value) {
             break;
         }
         case ArrayType::float64: {
-            auto tmp_double = static_cast<float>(value);
+            auto tmp_double = static_cast<double>(value);
             std::memcpy(&result, &tmp_double, sizeof(tmp_double));
             break;
         }

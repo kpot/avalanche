@@ -1,5 +1,7 @@
 #include <random>
 
+#include <fmt/format.h>
+
 #include "avalanche/random_nodes.h"
 #include "avalanche/Context.h"
 #include "avalanche/ExecutionCache.h"
@@ -7,8 +9,6 @@
 #include "avalanche/MultiArray.h"
 #include "avalanche/opencl_utils.h"
 
-#include <fmt/format.h>
-#include <OpenCL/opencl.h>
 
 namespace avalanche {
 
@@ -45,6 +45,7 @@ UniformRandom::generate_uniform_random(const MultiArrayRef &seeds) const {
     kernel.setArg(4, array_type_size(dtype()), &max_value_casted);
     std::vector<cl::Event> wait_for_events;
     wait_for_events.push_back(seeds->buffer_unsafe()->completion_event());
+    output->add_dependencies({seeds});
     const auto work_items = make_divisible_by(work_group_size, seeds->size());
     cl::Event result_event;
     queue.enqueueNDRangeKernel(

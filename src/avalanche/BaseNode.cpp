@@ -1,7 +1,3 @@
-//
-// Created by Kirill on 29/01/18.
-//
-
 #include <sstream>
 
 #include "avalanche/BaseNode.h"

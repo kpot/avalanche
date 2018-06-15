@@ -33,11 +33,13 @@ public:
     void init(const NodeRef &node, const MultiArrayRef& array);
     void init(const NodeId node_id, const MultiArrayRef& array);
 
-    // FIXME: Why can't you just take the shape from the node?
     template <typename T>
     MultiArrayRef init(const NodeRef &node,
                        const std::vector<T> &data,
                        const Shape &shape) {
+        // Note: having shape as an argument is necessary since the node
+        // may not have a fully defined shape assigned
+        check_data_shape_compatibility(shape, node->shape());
         auto array = device_pool()->make_array(
             shape, dtype_of_static_type<T>);
         auto writing_is_done = array->buffer_unsafe()->write_from_vector(data);
@@ -45,7 +47,7 @@ public:
         writing_is_done.wait();
         return array;
     }
-    // TODO: add init working with low-level data without types, for which we know only the size of the element
+
     template <typename T>
     MultiArrayRef init(const NodeRef &node,
                        const std::vector<T> &data,
@@ -96,7 +98,9 @@ private:
         :std::map<NodeId, MultiArrayRef>(),
          _buffer_pool{buffer_pool}{}
 
-    void check_multi_array_compatibility(const MultiArrayRef &array);
+    void check_multi_array_compatibility(const MultiArrayRef &array) const;
+    void check_data_shape_compatibility(const Shape &data_shape,
+                                        const Shape &node_shape) const;
 };
 
 

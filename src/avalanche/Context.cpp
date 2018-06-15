@@ -1,3 +1,5 @@
+#include <fmt/format.h>
+
 #include "avalanche/BaseNode.h"
 #include "avalanche/Context.h"
 
@@ -10,10 +12,7 @@ void Context::init(const NodeRef &node,
             "Given MultiArray instance has different "
             "data type that of the node.");
     }
-    if (array->shape() != node->shape()) {
-        throw std::invalid_argument(
-            "Given MultiArray instance differs in shape from the node");
-    }
+    check_data_shape_compatibility(array->shape(), node->shape());
     init(node->id, array);
 }
 
@@ -23,7 +22,8 @@ void Context::init(const NodeId node_id,
     operator[](node_id) = array;
 }
 
-void Context::check_multi_array_compatibility(const MultiArrayRef &array) {
+void Context::check_multi_array_compatibility(
+        const MultiArrayRef &array) const {
     if (array->buffer_unsafe()->pool() != _buffer_pool) {
         throw std::invalid_argument(
             "MultiArray and the Context cannot be linked to different"
@@ -34,12 +34,24 @@ void Context::check_multi_array_compatibility(const MultiArrayRef &array) {
 MultiArrayRef
 Context::init(const NodeRef &node, const void *data, std::size_t num_bytes,
               ArrayType array_type, const Shape &shape) {
+    check_data_shape_compatibility(shape, node->shape());
     auto array = device_pool()->make_array(shape, array_type);
     auto writing_is_done = (
         array->buffer_unsafe()->write_data(data, num_bytes));
     init(node, array);
     writing_is_done.wait();
     return array;
+}
+
+void Context::check_data_shape_compatibility(const Shape &data_shape,
+                                             const Shape &node_shape) const {
+    if (!data_shape.agrees_with(node_shape)) {
+        throw std::invalid_argument(
+            fmt::format("The shape of the data {} is incompatible "
+                        "with the shape of the node {}",
+                        data_shape.to_string(),
+                        node_shape.to_string()));
+    }
 }
 
 

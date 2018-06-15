@@ -1,6 +1,7 @@
 #include <clblast.h>
 #include <iostream>
 
+#include <avalanche/logging.h>
 #include "avalanche/math_ops/BroadcastedBinaryOp.h"
 #include "avalanche/opencl_utils.h"
 #include "avalanche/CodeCache.h"
@@ -45,50 +46,39 @@ std::size_t broadcast_size_masks(const Shape &shape1, const Shape &shape2,
     return aligned_shapes[2].size();
 }
 
-/**
- * Creates a full list of dimensions being added to the argument's
- *  shape during broadcasting. Useful for later calculation of derivatives.
- */
-std::vector<ShapeDim> dims_difference(const Shape &aligned_shape,
-                                      const Shape &result_shape) {
-    std::vector<ShapeDim> result;
-    if (aligned_shape.rank() != result_shape.rank()) {
-        throw std::invalid_argument("The shapes must be aligned!");
-    }
-    for (ShapeDim i = 0; i < aligned_shape.rank(); ++i) {
-        if (aligned_shape.dims()[i] != result_shape.dims()[i]) {
-            result.push_back(i);
-        }
-    }
-    return result;
-}
-
 BroadcastedBinaryOp::BroadcastedBinaryOp(
         const avalanche::NodeRef &left,
         const avalanche::NodeRef &right) {
     if (left->dtype() != right->dtype()) {
         throw std::invalid_argument(
-            "You cannot sum values of different types");
+            "You cannot work with values of different types here");
     }
-    result_dtype = left->dtype();
+    _result_dtype = left->dtype();
+    // Here we calculate only a preliminary result shape for debugging
+    // purposes. The real shape can be only evaluated in runtime (`forward`)
+    Shape tmp_left_shape_aligned, tmp_right_shape_aligned;
     Shape::align_for_broadcasting(
         left->shape(), right->shape(),
-        aligned_shape_left, aligned_shape_right, result_shape);
-    broadcast_size_masks(
-        left->shape(), right->shape(),
-        left_size_mask, right_size_mask, result_sub_sizes);
-    left_vs_result_shape_diff = dims_difference(
-        aligned_shape_left, result_shape);
-    right_vs_result_shape_diff = dims_difference(
-        aligned_shape_right, result_shape);
+        tmp_left_shape_aligned, tmp_right_shape_aligned, _result_shape);
 }
 
 
 MultiArrayRef avalanche::BroadcastedBinaryOp::forward(
         const MultiArrayRef &v1,
         const MultiArrayRef &v2) const {
+    // Calculating sizes, alignments, differences
+    Shape result_shape, aligned_shape_left, aligned_shape_right;
+    std::vector<cl_ulong> left_size_mask, right_size_mask, result_sub_sizes;
+
+    Shape::align_for_broadcasting(
+        v1->shape(), v2->shape(),
+        aligned_shape_left, aligned_shape_right, result_shape);
+    broadcast_size_masks(
+        v1->shape(), v2->shape(),
+        left_size_mask, right_size_mask, result_sub_sizes);
+
     // At this point we assume that every aspect of both arrays have already
-    // been checked by the constructor, so there's nothing to be worrying about
+    // been checked by the constructor, so there's nothing to worry about
     // Also at this point both arrays v1 and v2 may still be calculating,
     // so meanwhile we prepare and upload some other data
     auto pool = v1->buffer_unsafe()->pool();
@@ -99,6 +89,7 @@ MultiArrayRef avalanche::BroadcastedBinaryOp::forward(
     right_mask_buffer->set_label(__func__, __LINE__);
     auto result_sizes_buffer = pool->reserve_buffer_for_vector(result_sub_sizes);
     result_sizes_buffer->set_label(__func__, __LINE__);
+    // FIXME: Cleanup
     // You kinda have a problem here
     // The problem is that you use both the cl::Event directly when you schedule
     // something for execution, but you also rely on callbacks for some extra
@@ -118,13 +109,15 @@ MultiArrayRef avalanche::BroadcastedBinaryOp::forward(
          result_sizes_buffer->write_from_vector(result_sub_sizes),
          v1->buffer_unsafe()->completion_event(),
          v2->buffer_unsafe()->completion_event()});
-    auto result = pool->make_array(result_shape, result_dtype);
+//    cl::WaitForEvents(data_are_ready);
+//    pool->cl_queue().flush();
+    auto result = pool->make_array(result_shape, _result_dtype);
     result->set_label(std::string(kernel_op_name()) + " at " + __func__, __LINE__);
-    // To keep the buffers alive until the computation is done
+    // To keep the buffers alive until the computation is done we add them
+    // as dependencies.
     result->add_dependencies(
         {left_mask_buffer, right_mask_buffer, result_sizes_buffer});
     result->add_dependencies({v1, v2});
-    // cl::Event::waitForEvents(data_are_ready);
     // The main job
     const std::string source(
         elem_wise_broadcasted_source,
@@ -138,8 +131,6 @@ MultiArrayRef avalanche::BroadcastedBinaryOp::forward(
     const auto result_size = result_shape.size();
     const std::size_t work_group_size = 64;
     const auto work_items = make_divisible_by(work_group_size, result_size);
-    cl_int mask_rank = left_size_mask.size();
-//    std::cout << "Mask rank: " << mask_rank << std::endl;
     cl::Event result_event = kernel_functor(
         cl::EnqueueArgs(queue,
                         data_are_ready,
@@ -152,10 +143,13 @@ MultiArrayRef avalanche::BroadcastedBinaryOp::forward(
         right_mask_buffer->cl_buffer_unsafe(),
         result_sizes_buffer->cl_buffer_unsafe(),
         static_cast<cl_ulong>(result_size),
-        mask_rank);
+        static_cast<cl_int>(left_size_mask.size()));
     // Let us know when everything is done by marking the resulting array
     // as "complete" (ready)
     result->set_completion_event(result_event);
+    // Without waiting we cannot guarantee that OpenCL will have enough
+    // time to copy all the data into the buffers before the vectors are gone
+    result->wait_until_ready();
     return result;
 }
 

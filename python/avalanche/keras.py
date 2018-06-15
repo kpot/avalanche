@@ -344,6 +344,7 @@ def int_shape(x):
     # Returns
         A tuple of integers (or None entries).
     """
+    # raise NotImplementedError('Adjust with respect to non-full shapes')
     if hasattr(x, '_keras_shape'):
         return x._keras_shape
     elif hasattr(x, 'shape'):

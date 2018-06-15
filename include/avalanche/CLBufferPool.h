@@ -1,7 +1,3 @@
-//
-// Created by Kirill on 25/01/18.
-//
-
 #ifndef AVALANCHE_CLBUFFERPOOL_H
 #define AVALANCHE_CLBUFFERPOOL_H
 
@@ -24,7 +20,7 @@ class CLMemoryManager;
 // TODO: Check if the pool has been destroyed
 class CLBufferPool {
 public:
-    // Enough buffers the size of up to 1 TB
+    // Enough for up to 1 TB of buffers
     static constexpr std::uint8_t MaxBuckets = 40;
     static constexpr std::size_t MaxBufferSize = (
         static_cast<std::size_t>(1) << MaxBuckets);
@@ -49,8 +45,10 @@ public:
     std::size_t num_buckets() const;
     std::size_t device_index() { return _device_index; }
     cl::CommandQueue& cl_queue() { return _device_queue; }
+    const cl::CommandQueue& cl_queue() const { return _device_queue; }
     cl::Context& cl_context() { return _cl_context; }
     std::shared_ptr<CLBufferPool> own_reference();
+    bool queue_support_ooo_execution() const;
 
 private:
     CLMemoryManager *_memory_manager;

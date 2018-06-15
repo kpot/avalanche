@@ -62,11 +62,13 @@ const NodeRef back_propagate_node(
     auto &var_consumers = consumers[variable];
     chunks.reserve(var_consumers.size());
     for (const auto &consumer: var_consumers) {
-        auto d_target_wrt_consumer = back_propagate_node(
-            consumer, target, grad_table, consumers);
-        auto d_chunk = consumer->apply_chain_rule(
-            variable, d_target_wrt_consumer, consumer->inputs());
-        chunks.push_back(d_chunk);
+        if (consumer->use_in_back_propagation()) {
+            auto d_target_wrt_consumer = back_propagate_node(
+                consumer, target, grad_table, consumers);
+            auto d_chunk = consumer->apply_chain_rule(
+                variable, d_target_wrt_consumer, consumer->inputs());
+            chunks.push_back(d_chunk);
+        }
     }
     NodeRef result;
     if (chunks.empty()) {

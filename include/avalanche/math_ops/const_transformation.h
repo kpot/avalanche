@@ -87,7 +87,7 @@ public:
     MultiArrayRef forward(const MultiArrayRef &value) const {
         auto pool = value->buffer_unsafe()->pool();
         auto queue = pool->cl_queue();
-        auto result = pool->make_array(result_shape, result_dtype);
+        auto result = pool->make_array(value->shape(), result_dtype);
         result->set_label(opencl_operation + " via " + __func__, __LINE__);
         result->add_dependencies({value});
         auto wait_for_data = make_event_list(
@@ -97,11 +97,13 @@ public:
             queue,
             value->cl_buffer_unsafe(),
             result->cl_buffer_unsafe(),
-            result_shape.size(),
+            value->shape().size(),
             wait_for_data);
         result->set_completion_event(is_ready);
         return result;
     }
+
+    bool use_in_back_propagation() const { return true; };
 
     virtual const NodeRef apply_chain_rule(const NodeRef &wrt_input,
                                    const NodeRef &d_target_wrt_this,
@@ -229,7 +231,7 @@ public:
     const NodeRef partial_derivative(const NodeRef &input) const override;
 };
 
-// Calculates reciprocal of a given number
+// Calculates reciprocal (1/x) of a given number
 class Recip : public ConstTransform<0> {
 public:
     Recip(const NodeRef &input)

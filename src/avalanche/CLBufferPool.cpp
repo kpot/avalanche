@@ -7,6 +7,7 @@
 #include "avalanche/opencl_utils.h"
 #include "avalanche/MultiArray.h"
 #include "avalanche/CLMemoryManager.h"
+#include "avalanche/logging.h"
 
 #ifndef __CL_ENABLE_EXCEPTIONS
 #ifndef CL_HPP_ENABLE_EXCEPTIONS
@@ -30,7 +31,6 @@ CLBufferPool::CLBufferPool(
 
 }
 CLBufferPool::~CLBufferPool() {
-//    std::cout << "Buffer pool " << _device_index << " has been destroyed\n";
 }
 
 
@@ -92,6 +92,10 @@ CLBufferPool::make_array(Shape shape, ArrayType dtype) {
 
 std::shared_ptr<CLBufferPool> CLBufferPool::own_reference() {
     return _memory_manager->buffer_pool(_device_index);
+}
+
+bool CLBufferPool::queue_support_ooo_execution() const {
+    return _memory_manager->device_info(_device_index).supports_out_of_order_execution;
 }
 
 

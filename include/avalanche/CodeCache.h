@@ -1,7 +1,3 @@
-//
-// Created by Kirill on 08/02/18.
-//
-
 #ifndef AVALANCHE_PROGRAMCACHE_H
 #define AVALANCHE_PROGRAMCACHE_H
 

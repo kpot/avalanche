@@ -1,7 +1,3 @@
-//
-// Created by Kirill on 10/02/18.
-//
-
 #include "avalanche/CLBufferPool.h"
 #include "avalanche/opencl_utils.h"
 

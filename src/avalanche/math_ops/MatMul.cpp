@@ -15,10 +15,10 @@ MatMul::MatMul(const NodeRef &left, const NodeRef &right,
                bool transpose_right)
     :transpose_left{transpose_left},
      transpose_right{transpose_right},
-     result_shape({
+     _result_shape({
                       transpose_left ? left->shape().dim(1) : left->shape().dim(0),
                       transpose_right ? right->shape().dim(0) : right->shape().dim(1)}),
-     result_dtype{left->dtype()}
+     _result_dtype{left->dtype()}
 {
     if (left->dtype() != right->dtype()) {
         throw std::invalid_argument(
@@ -85,15 +85,25 @@ ARRAY_DTYPE_SWITCH_FLOAT_FUNCTION(gemm_switch, array_gemm, clblast::StatusCode,)
 
 MultiArrayRef
 MatMul::forward(const MultiArrayRef &v1, const MultiArrayRef &v2) const {
+    if ((transpose_left ? v1->shape().dim(0) : v1->shape().dim(1)) !=
+        (transpose_right ? v2->shape().dim(1) : v2->shape().dim(0))) {
+        throw std::invalid_argument(
+            "Number of columns in the first matrix must be the same "
+            "as the number of rows in the second. With respect "
+            "to transpositions, if needed.");
+    }
+    Shape result_shape(
+        {transpose_left ? v1->shape().dim(1) : v1->shape().dim(0),
+         transpose_right ? v2->shape().dim(0) : v2->shape().dim(1)});
     auto pool = v1->buffer_unsafe()->pool();
     auto queue = pool->cl_queue();
-    auto result = pool->make_array(result_shape, result_dtype);
-    result->add_dependencies({v1, v2});
+    auto result = pool->make_array(result_shape, _result_dtype);
     result->set_label(__func__, __LINE__);
+    result->add_dependencies({v1, v2});
     cl_command_queue ll_queue = queue.get();
     cl_event result_event = nullptr;
     auto status = gemm_switch(
-        result_dtype, v1, transpose_left, v2, transpose_right, result,
+        _result_dtype, v1, transpose_left, v2, transpose_right, result,
         &ll_queue, &result_event);
     if (status != clblast::StatusCode::kSuccess) {
         throw std::runtime_error(
