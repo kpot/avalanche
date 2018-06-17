@@ -162,13 +162,15 @@ using ContextInitArray = py::array_t<
     py::array::forcecast | py::array::c_style>;
 
 
-std::vector<ShapeDim> convert_shape(const std::vector<ssize_t> &shape) {
+std::vector<ShapeDim> convert_shape_to_avalanche(
+        const std::vector<ssize_t> &shape) {
     std::vector<ShapeDim> result(shape.size());
     std::copy(shape.begin(), shape.end(), result.begin());
     return result;
 }
 
-std::vector<ssize_t> convert_shape(const std::vector<ShapeDim> &shape) {
+std::vector<ssize_t> convert_shape_from_avalanche(
+        const std::vector<ShapeDim> &shape) {
     std::vector<ssize_t> result(shape.size());
     std::copy(shape.begin(), shape.end(), result.begin());
     return result;
@@ -185,7 +187,7 @@ MultiArrayRef init_context_with_cast(
     std::copy((const ContextInitArrayType *)info.ptr,
               ((const ContextInitArrayType *)info.ptr) + data.size(),
               tmp_copy.begin());
-    auto dims = convert_shape(info.shape);
+    auto dims = convert_shape_to_avalanche(info.shape);
     return context->init(node, tmp_copy, Shape(dims));
 }
 
@@ -197,7 +199,7 @@ template<>
 MultiArrayRef init_context_with_cast<ContextInitArrayType>(
     const NodeRef &node, ContextRef &context, ContextInitArray &data) {
     py::buffer_info info = data.request();
-    auto dims = convert_shape(info.shape);
+    auto dims = convert_shape_to_avalanche(info.shape);
     return context->init(
         node, info.ptr, static_cast<std::size_t>(data.nbytes()),
         dtype_of_static_type<ContextInitArrayType>, Shape(dims));
@@ -213,7 +215,7 @@ init_context(ContextRef &context, const NodeRef &node, ContextInitArray data) {
 
 template <typename T>
 py::array array_to_numpy_template(MultiArrayRef &array) {
-    auto dims = convert_shape(array->shape().dims());
+    auto dims = convert_shape_from_avalanche(array->shape().dims());
     py::array_t<T, py::array::c_style> result(dims);
     auto info = result.request(true);
     array->wait_until_ready();
@@ -243,7 +245,7 @@ Initializer numpy_value_initializer(py::array value) {
                 throw std::invalid_argument(
                     "Only c-style arrays are supported");
             }
-            Shape shape(convert_shape(info.shape));
+            Shape shape(convert_shape_to_avalanche(info.shape));
             ArrayType array_type = dtype_to_avalanche_array_type(value.dtype());
             auto result = context.device_pool()->make_array(shape, array_type);
             auto writing_is_done = result->buffer_when_ready()->write_data(
@@ -263,7 +265,7 @@ NodeRef make_constant_from_numpy(py::array value, const std::string &name) {
     if (!(value.flags() & py::array::c_style)) {
         throw std::invalid_argument("Only c-style arrays are supported");
     }
-    Shape shape(convert_shape(info.shape));
+    Shape shape(convert_shape_to_avalanche(info.shape));
     ArrayType array_type = dtype_to_avalanche_array_type(value.dtype());
     return Constant::tensor(
         name,
