@@ -115,7 +115,7 @@ TEST_CASE("Checking the agreements between shapes") {
 
 
 TEST_CASE("Initializing variables with incompletely defined shapes") {
-    auto var1 = Variable::make("check", {-1, 5}, ArrayType::float32, nullptr);
+    auto var1 = Variable::make("check", {-1, 5}, ArrayType::float32, Initializer{});
     auto context = Context::make_for_device(0);
     std::vector<float> data(10);
     context->init(var1, data, Shape({2, 5}));
