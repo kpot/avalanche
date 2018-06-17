@@ -39,11 +39,14 @@ const NodeRef Constant::fill(Shape shape, ArrayType dtype, float value) {
     if (!shape.is_complete()) {
         throw std::invalid_argument("The shape must be fully defined");
     }
-    Initializer initializer = [shape, dtype, value](Context &context, ExecutionCache &cache) {
-        auto result = context.device_pool()->make_array(shape, dtype);
-        auto queue = result->buffer_unsafe()->pool()->cl_queue();
-        fill_array_switch(dtype, queue, result, value);
-        return result;
+    Initializer initializer{
+        [shape, dtype, value](Context &context, ExecutionCache &cache) {
+            auto result = context.device_pool()->make_array(shape, dtype);
+            auto queue = result->buffer_unsafe()->pool()->cl_queue();
+            fill_array_switch(dtype, queue, result, value);
+            return result;
+        },
+        dtype
     };
     return std::static_pointer_cast<BaseNode>(
         std::make_shared<Constant>(
@@ -60,7 +63,7 @@ void check_compatibility(const BaseNode *node, T other_thing) {
                         "an incompatible data type {}",
                         node->repr(), array_type_name(other_thing->dtype())));
     }
-    if (other_thing->shape() != node->shape()) {
+    if (!other_thing->shape().agrees_with(node->shape())) {
         throw std::invalid_argument(
             fmt::format(
                 "Initializer for node {} has an incompatible shape {}",
@@ -71,7 +74,7 @@ void check_compatibility(const BaseNode *node, T other_thing) {
 MultiArrayRef Constant::eval(Context &context, ExecutionCache &cache) const {
     MultiArrayRef cached_value;
     if (!context.get(id, cached_value)) {
-        cached_value = _initializer(context, cache);
+        cached_value = _initializer.code(context, cache);
         check_compatibility(this, cached_value);
         cached_value->set_label(to_string());
         if (_dependencies.empty()) {
@@ -92,8 +95,7 @@ Constant::tensor(const std::string &name,
                  const Shape &shape) {
     std::vector<std::uint8_t> copy_of_data(num_bytes);
     std::memcpy(copy_of_data.data(), data, num_bytes);
-    return std::make_shared<Constant>(
-        name,
+    Initializer initializer {
         [shape, copy_of_data, dtype](Context &context,
                                      ExecutionCache &cache) -> MultiArrayRef {
             auto result = context.device_pool()->make_array(shape, dtype);
@@ -101,6 +103,11 @@ Constant::tensor(const std::string &name,
             result->buffer_unsafe()->write_from_vector(copy_of_data, 0);
             return result;
         },
+        dtype
+    };
+    return std::make_shared<Constant>(
+        name,
+        initializer,
         shape,
         dtype, NodeRefList());
 }
@@ -121,16 +128,18 @@ const NodeRef Constant::fill_shape(const avalanche::NodeRef &shape_node,
                 "Currently it's {}-D",
                 shape_node->shape().rank()));
     }
-    Initializer initializer = [shape_node, value, dtype](
-            Context &context, ExecutionCache &cache) {
-        auto shape_array = shape_node->eval(context, cache);
-        std::vector<ShapeDim> shape_dims;
-        shape_array->fetch_data_into(shape_dims);
+    Initializer initializer{
+        [shape_node, value, dtype](Context &context, ExecutionCache &cache) {
+            auto shape_array = shape_node->eval(context, cache);
+            std::vector<ShapeDim> shape_dims;
+            shape_array->fetch_data_into(shape_dims);
 
-        auto result = context.device_pool()->make_array(shape_dims, dtype);
-        auto queue = result->buffer_unsafe()->pool()->cl_queue();
-        fill_array_switch(dtype, queue, result, value);
-        return result;
+            auto result = context.device_pool()->make_array(shape_dims, dtype);
+            auto queue = result->buffer_unsafe()->pool()->cl_queue();
+            fill_array_switch(dtype, queue, result, value);
+            return result;
+        },
+        dtype
     };
     // We don't know the shape at this stage, but we know it's rank at least
     std::vector<ShapeDim> proto_dims(
@@ -145,14 +154,16 @@ const NodeRef Constant::fill_shape(const avalanche::NodeRef &shape_node,
 }
 
 const NodeRef Constant::fill_like(const NodeRef &other_node, float value) {
-    Initializer initializer = [value, other_node](
-            Context &context, ExecutionCache &cache) {
-        auto real_value = other_node->eval(context, cache);
-        auto result = context.device_pool()->make_array(
-            real_value->shape(), real_value->dtype());
-        auto queue = result->buffer_unsafe()->pool()->cl_queue();
-        fill_array_switch(real_value->dtype(), queue, result, value);
-        return result;
+    Initializer initializer {
+        [value, other_node](Context &context, ExecutionCache &cache) {
+            auto real_value = other_node->eval(context, cache);
+            auto result = context.device_pool()->make_array(
+                real_value->shape(), real_value->dtype());
+            auto queue = result->buffer_unsafe()->pool()->cl_queue();
+            fill_array_switch(real_value->dtype(), queue, result, value);
+            return result;
+        },
+        other_node->dtype()
     };
     return std::static_pointer_cast<BaseNode>(
         std::make_shared<Constant>(
@@ -167,7 +178,7 @@ MultiArrayRef Variable::eval(Context &context, ExecutionCache &cache) const {
     MultiArrayRef cached_value;
     if (!context.get(id, cached_value)) {
         if (_initializer) {
-            cached_value = _initializer(context, cache);
+            cached_value = _initializer.code(context, cache);
             check_compatibility(this, cached_value);
             cached_value->set_label(to_string());
             context.init(id, cached_value);
@@ -195,6 +206,15 @@ Variable::make_from_node(const std::string &name,
 NodeRef
 Variable::make(const std::string &name, const std::vector<ShapeDim> &shape_dims,
                ArrayType dtype, Initializer initializer) {
+    if (initializer) {
+       if (dtype != initializer.dtype)  {
+           throw std::invalid_argument(
+               fmt::format(
+                   "Given initializer's type ({}) is incompatible "
+                   "with the variable's type {}",
+                   array_type_name(initializer.dtype), array_type_name(dtype)));
+       }
+    }
     Variable *raw_ptr = new Variable(
         name, std::move(initializer), Shape(shape_dims), dtype);
     return std::static_pointer_cast<BaseNode>(
@@ -203,15 +223,17 @@ Variable::make(const std::string &name, const std::vector<ShapeDim> &shape_dims,
 
 Initializer node_initializer(const NodeRef &node) {
     if (node) {
-        Initializer initializer = [node](Context &context,
-                                         ExecutionCache &cache) {
-            // the values used for initialization are not cached, just like in
-            // TF where initialization is a separate step. Doing it otherwise
-            // (with caching) would have greatly complicated everything.
-            return node->eval(context, cache);
-        };
+        Initializer initializer {
+            [node](Context &context,
+                   ExecutionCache &cache) {
+                // the values used for initialization are not cached, just like in
+                // TF where initialization is a separate step. Doing it otherwise
+                // (with caching) would have greatly complicated everything.
+                return node->eval(context, cache);
+            },
+            node->dtype()};
         return initializer;
     }
-    return nullptr;
+    return Initializer{};
 }
 } // namespace

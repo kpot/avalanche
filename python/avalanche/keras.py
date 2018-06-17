@@ -72,6 +72,8 @@ class use_device:
 def avalanche_dtype(dtype):
     if isinstance(dtype, str):
         if not hasattr(av.ArrayType, dtype):
+            if dtype.startswith('ref_'):
+                dtype = dtype[4:]
             dtype = np.dtype(dtype).name
         return getattr(av.ArrayType, dtype)
     elif isinstance(dtype, np.dtype):
@@ -113,15 +115,23 @@ def variable(value, dtype=None, name=None, constraint=None):
     """
     if name is None:
         name = 'variable' + str(get_uid('variable'))
-    if dtype is None:
-        dtype = floatx()
     if constraint is not None:
         raise NotImplementedError('Constraints are not supported')
     if is_tensor(value):
         variable = av.variable_from_node(name, value)
     else:
-        if not isinstance(value, np.ndarray):
+        if dtype is None:
             value = np.array(value)
+            if value.dtype == 'int64':
+                value = np.array(value, dtype='int32')
+                dtype = 'int32'
+            elif value.dtype == 'float64':
+                dtype = floatx()
+                value = np.array(value, dtype=floatx())
+            else:
+                dtype = value.dtype.name
+        else:
+            value = np.array(value, dtype=dtype)
         variable = av.variable(
             name, value.shape, avalanche_dtype(dtype),
             av.value_initializer(value))
@@ -221,7 +231,7 @@ class Function(object):
         self.name = name
         self.context = get_context()
         self.placeholders = inputs
-        self.executor = av.Executor(self.context, outputs)
+        self.executor = av.Executor(self.context, outputs, updates)
 
     def __call__(self, inputs):
         for node, value in zip(self.placeholders, inputs):
@@ -397,7 +407,7 @@ def constant(value, dtype=None, shape=None, name=None):
         value = np.full(shape, value, dtype=dtype)
     if name is None:
         name = 'constant' + str(get_uid('constant'))
-    return av.constant(value, name)
+    return av.consts.from_array(value, name)
 
 
 def dot(x, y):
@@ -767,6 +777,19 @@ def gradients(loss, variables):
     return av.gradients(loss, variables)
 
 
+def update(x, new_x):
+    """Update the value of `x` to `new_x`.
+
+    # Arguments
+        x: A `Variable`.
+        new_x: A tensor of same shape as `x`.
+
+    # Returns
+        The variable `x` updated.
+    """
+    return av.ops.update(x, new_x)
+
+
 def update_add(x, increment):
     """Update the value of `x` by adding `increment`.
 
@@ -822,4 +845,62 @@ def pow(x, a):
         return av.ops.scale_pow(x, 1, a)
     else:
         return av.ops.pow(x, a)
+
+
+def zeros(shape, dtype=None, name=None):
+    """Instantiates an all-zeros variable and returns it.
+
+    # Arguments
+        shape: Tuple of integers, shape of returned Keras variable
+        dtype: String, data type of returned Keras variable
+        name: String, name of returned Keras variable
+
+    # Returns
+        A variable (including Keras metadata), filled with `0.0`.
+        Note that if `shape` was symbolic, we cannot return a variable,
+        and will return a dynamically-shaped tensor instead.
+
+    # Example
+    ```python
+        >>> from keras import backend as K
+        >>> kvar = K.zeros((3,4))
+        >>> K.eval(kvar)
+        array([[ 0.,  0.,  0.,  0.],
+               [ 0.,  0.,  0.,  0.],
+               [ 0.,  0.,  0.,  0.]], dtype=float32)
+    ```
+    """
+    if dtype is None:
+        dtype = floatx()
+    zeros_const = av.consts.zeros(shape, avalanche_dtype(dtype))
+    return variable(zeros_const, dtype=dtype, name=name)
+
+
+def ones(shape, dtype=None, name=None):
+    """Instantiates an all-ones variable and returns it.
+
+    # Arguments
+        shape: Tuple of integers, shape of returned Keras variable.
+        dtype: String, data type of returned Keras variable.
+        name: String, name of returned Keras variable.
+
+    # Returns
+        A Keras variable, filled with `1.0`.
+        Note that if `shape` was symbolic, we cannot return a variable,
+        and will return a dynamically-shaped tensor instead.
+
+    # Example
+    ```python
+        >>> from keras import backend as K
+        >>> kvar = K.ones((3,4))
+        >>> K.eval(kvar)
+        array([[ 1.,  1.,  1.,  1.],
+               [ 1.,  1.,  1.,  1.],
+               [ 1.,  1.,  1.,  1.]], dtype=float32)
+    ```
+    """
+    if dtype is None:
+        dtype = floatx()
+    ones_const = av.consts.ones(av.Shape(shape), avalanche_dtype(dtype))
+    return variable(ones_const, dtype=dtype, name=name)
 

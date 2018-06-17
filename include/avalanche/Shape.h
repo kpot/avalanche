@@ -19,6 +19,7 @@ public:
 //    explicit Shape(std::vector<ShapeDim> dims);
     Shape(const std::vector<ShapeDim> &dims);
     Shape(std::initializer_list<ShapeDim> dims);
+    Shape(ShapeDim dim) :Shape({dim}) { }
     Shape(const Shape& shape) :_dims{shape._dims} {}
     Shape& operator=(const Shape& shape) { _dims = shape._dims; return *this; }
     Shape(Shape&& shape) noexcept :_dims{std::move(shape._dims)} {}

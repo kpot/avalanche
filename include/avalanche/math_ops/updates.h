@@ -5,9 +5,9 @@
 
 namespace avalanche {
 
-class UpdateOp {
+class BaseUpdateOp {
 public:
-    UpdateOp(const NodeRef &variable,
+    BaseUpdateOp(const NodeRef &variable,
              const NodeRef &update,
              const std::string &operation_name,
              const std::string &operation_cl_code);
@@ -38,17 +38,22 @@ private:
     std::string _kernel_source;
 };
 
-
-class UpdateAdd: public UpdateOp {
+class Update: public BaseUpdateOp {
 public:
-    UpdateAdd(const NodeRef &left, const NodeRef &right)
-        :UpdateOp(left, right, "update_add", "+=") {}
+    Update(const NodeRef &left, const NodeRef &right)
+        :BaseUpdateOp(left, right, "update", "=") {}
 };
 
-class UpdateSub: public UpdateOp {
+class UpdateAdd: public BaseUpdateOp {
+public:
+    UpdateAdd(const NodeRef &left, const NodeRef &right)
+        :BaseUpdateOp(left, right, "update_add", "+=") {}
+};
+
+class UpdateSub: public BaseUpdateOp {
 public:
     UpdateSub(const NodeRef &left, const NodeRef &right)
-        :UpdateOp(left, right, "update_sub", "-=") {}
+        :BaseUpdateOp(left, right, "update_sub", "-=") {}
 };
 
 } // namespace

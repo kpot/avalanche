@@ -53,7 +53,7 @@ void {kernel_name}(
         fmt::arg("stype", cl_type_name_of_array(stype)));
 }
 
-UpdateOp::UpdateOp(const NodeRef &variable, const NodeRef &update,
+BaseUpdateOp::BaseUpdateOp(const NodeRef &variable, const NodeRef &update,
                    const std::string &operation_name,
                    const std::string &operation_cl_code)
 :_result_shape{variable->shape()},
@@ -75,7 +75,7 @@ UpdateOp::UpdateOp(const NodeRef &variable, const NodeRef &update,
 }
 
 MultiArrayRef
-UpdateOp::forward(const MultiArrayRef &v1, const MultiArrayRef &v2) const {
+BaseUpdateOp::forward(const MultiArrayRef &v1, const MultiArrayRef &v2) const {
     auto pool = v1->buffer_unsafe()->pool();
     auto queue = pool->cl_queue();
     auto program = CodeCache::get_default().get_program(

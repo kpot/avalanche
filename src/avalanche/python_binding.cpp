@@ -236,19 +236,23 @@ py::array array_to_numpy(MultiArrayRef &array) {
 
 
 Initializer numpy_value_initializer(py::array value) {
-    Initializer initializer = [value](Context &context, ExecutionCache &cache) mutable {
-        py::buffer_info info = value.request(false);
-        if (!(value.flags() & py::array::c_style)) {
-            throw std::invalid_argument("Only c-style arrays are supported");
-        }
-        Shape shape(convert_shape(info.shape));
-        ArrayType array_type = dtype_to_avalanche_array_type(value.dtype());
-        auto result = context.device_pool()->make_array(shape, array_type);
-        auto writing_is_done = result->buffer_when_ready()->write_data(
-            info.ptr, static_cast<std::size_t>(info.size * info.itemsize), 0);
-        // FIXME: Probably the waiting is unnecessary, since this event is a "completion event" anyway.
-        writing_is_done.wait();
-        return result;
+    Initializer initializer = {
+        [value](Context &context, ExecutionCache &cache) mutable {
+            py::buffer_info info = value.request(false);
+            if (!(value.flags() & py::array::c_style)) {
+                throw std::invalid_argument(
+                    "Only c-style arrays are supported");
+            }
+            Shape shape(convert_shape(info.shape));
+            ArrayType array_type = dtype_to_avalanche_array_type(value.dtype());
+            auto result = context.device_pool()->make_array(shape, array_type);
+            auto writing_is_done = result->buffer_when_ready()->write_data(
+                info.ptr, static_cast<std::size_t>(info.size * info.itemsize),
+                0);
+            result->wait_until_ready();
+            return result;
+        },
+        dtype_to_avalanche_array_type(value.dtype())
     };
     return initializer;
 }
@@ -292,6 +296,7 @@ PYBIND11_MODULE(pyvalanche, m) {
 
     py::class_<Shape>(m, "Shape")
         .def(py::init<const std::vector<ShapeDim> &>())
+        .def(py::init<ShapeDim>())
         .def("__str__", &Shape::to_string)
         .def("dim", &Shape::dim)
         .def("dims", &Shape::dim)
@@ -302,6 +307,7 @@ PYBIND11_MODULE(pyvalanche, m) {
         .def("__eq__", &Shape::operator==)
         .def("__ne__", &Shape::operator!=)
         .def("__getitem__", &Shape::operator[]);
+    py::implicitly_convertible<ShapeDim, Shape>();
 
     py::enum_<ArrayType>(m, "ArrayType")
         .value("int8", ArrayType::int8)
@@ -357,6 +363,7 @@ PYBIND11_MODULE(pyvalanche, m) {
 
     py::class_<Executor>(m, "Executor")
         .def(py::init<const ContextRef&, const NodeRefList&>())
+        .def(py::init<const ContextRef&, const NodeRefList&, const NodeRefList&>())
         .def("run", &Executor::run);
 
     py::class_<DeviceInfo>(m, "DeviceInfo")
@@ -391,12 +398,17 @@ PYBIND11_MODULE(pyvalanche, m) {
           "computational node (tensor)",
           py::arg("name"), py::arg("initializer"));
 
-    m.def("constant", &make_constant_from_numpy, "Creates a new constant");
 
     m.def("random_uniform", &UniformRandom::make);
 
     m.def("value_initializer", &numpy_value_initializer);
     m.def("gradients", &build_gradients);
+
+    m.def_submodule("consts", "Available constants")
+        .def("zeros", &Constant::zeros)
+        .def("ones", &Constant::ones)
+        .def("from_array", &make_constant_from_numpy, "Creates a new constant");
+
 
     py::module ops = m.def_submodule("ops", "Available operations");
 
@@ -443,6 +455,8 @@ PYBIND11_MODULE(pyvalanche, m) {
              "Elem-wise truth value of (x < y) with broadcasting")
         .def("less_equal", &SimpleBinaryOp<LessEqual>,
              "Elem-wise truth value of (x <= y) with broadcasting")
+        .def("update", &SimpleBinaryOp<Update>,
+             "In-place update (assignment) of a variable")
         .def("update_add", &SimpleBinaryOp<UpdateAdd>,
              "In-place addition like +=")
         .def("update_sub", &SimpleBinaryOp<UpdateSub>,

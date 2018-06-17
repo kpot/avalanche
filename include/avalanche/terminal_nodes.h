@@ -12,8 +12,17 @@
 
 namespace avalanche {
 
-using Initializer = std::function<
+using InitializerFunc = std::function<
     MultiArrayRef(Context &context, ExecutionCache &cache)>;
+
+struct Initializer {
+    InitializerFunc code = nullptr;
+    ArrayType dtype = ArrayType::int8;
+
+    explicit operator bool() const {
+        return static_cast<bool>(code);
+    }
+};
 
 
 /**
@@ -28,10 +37,15 @@ template <typename T>
 Initializer value_initializer(
         const std::vector<T> &data,
         const Shape &shape) {
-    Initializer initializer = [data, shape](Context &context, ExecutionCache &cache) {
-        auto result = context.device_pool()->make_array(shape, dtype_of_static_type<T>);
-        result->write_from_vector(data);
-        return result;
+    Initializer initializer{
+        [data, shape](Context &context, ExecutionCache &cache) {
+            auto result = context.device_pool()->make_array(
+                shape,
+                dtype_of_static_type<T>);
+            result->write_from_vector(data);
+            return result;
+        },
+        dtype_of_static_type<T>
     };
     return initializer;
 }
@@ -91,7 +105,7 @@ public:
     static NodeRef make(const std::string &name,
                         const std::vector<ShapeDim> &shape_dims,
                         ArrayType dtype=ArrayType::float32,
-                        Initializer initializer=nullptr);
+                        Initializer initializer={});
 
 private:
     Initializer _initializer;
