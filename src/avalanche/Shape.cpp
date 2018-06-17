@@ -13,6 +13,7 @@ namespace avalanche {
 std::size_t avalanche::Shape::size() const {
     if (std::any_of(_dims.begin(), _dims.end(),
                     [](ShapeDim dim) { return dim <= 0; })) {
+        // FIXME: Cleanup
 //        using namespace backward;
 //        StackTrace st; st.load_here(32);
 //        Printer p; p.print(st);

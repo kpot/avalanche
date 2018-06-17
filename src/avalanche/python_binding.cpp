@@ -340,6 +340,9 @@ PYBIND11_MODULE(pyvalanche, m) {
         .def("__rmul__", [](const NodeRef &node, float value) -> NodeRef {
             return FU<Scale>(node, value);
         })
+        .def("__rsub__", [](const NodeRef &node, float value) -> NodeRef {
+            return F<Minus>(Constant::scalar(value), node);
+        })
         ;
     py::implicitly_convertible<float, BaseNode>();
     py::implicitly_convertible<long, BaseNode>();
@@ -415,6 +418,7 @@ PYBIND11_MODULE(pyvalanche, m) {
         .def("scale_pow", [](const NodeRef &input, float scale, float power) {
             return FU<SPower>(input, scale, power);
         })
+        .def("pow", &SimpleBinaryOp<Power>)
         .def("plus", &SimpleBinaryOp<Plus>,
              "Elem-wise addition with broadcasting")
         .def("minus", &SimpleBinaryOp<Minus>,

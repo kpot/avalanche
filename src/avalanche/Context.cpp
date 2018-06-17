@@ -54,5 +54,25 @@ void Context::check_data_shape_compatibility(const Shape &data_shape,
     }
 }
 
+MultiArrayRef Context::eval(const NodeRef &node) const {
+    MultiArrayRef result;
+    if (!get(node->id, result)) {
+        throw std::invalid_argument(
+            fmt::format("Given graph node ({}) has not been initialized yet",
+                        node->repr()));
+    }
+    return result;
+}
+
+bool Context::get(NodeId node_id, MultiArrayRef &result) const {
+    auto cached = find(node_id);
+    if (cached != this->end()) {
+        result = cached->second;
+        return true;
+    }
+    result = nullptr;
+    return false;
+}
+
 
 } // namespace

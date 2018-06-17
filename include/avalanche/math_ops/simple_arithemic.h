@@ -68,11 +68,41 @@ public:
 
     static std::string
     cl_operation_code(ArrayType left_dtype, ArrayType right_dtype) {
-        if (choose_common_array_type(left_dtype, right_dtype) 
+        if (choose_common_array_type(left_dtype, right_dtype)
                 == ArrayType::float32) {
             return "native_divide((float)a, (float)b)";
         }
         return "a / b";
+    }
+
+    const NodeRef apply_chain_rule(
+        const NodeRef &wrt_input,
+        const NodeRef &d_target_wrt_this,
+        const NodeRefList &all_inputs) const;
+};
+
+class Power : public BroadcastedBinaryOp {
+public:
+    Power(const NodeRef &left, const NodeRef &right)
+        : BroadcastedBinaryOp(
+        left, right, "power",
+        cl_operation_code(left->dtype(), right->dtype()),
+        choose_common_array_type(left->dtype(), right->dtype())) {}
+
+    std::string name() const { return "/"; }
+
+    static std::string
+    cl_operation_code(ArrayType left_dtype, ArrayType right_dtype) {
+        if (is_floating_array_type(left_dtype) &&
+                !is_floating_array_type(right_dtype)) {
+            return "pown(a, (int)b)";
+        } else {
+            auto uni_type = choose_common_array_type(left_dtype, right_dtype);
+            const char *uni_cl_type = cl_type_name_of_array(uni_type);
+            return (
+                std::string("pow((") + uni_cl_type +
+                    ")a, (" + uni_cl_type + ")b)");
+        }
     }
 
     const NodeRef apply_chain_rule(

@@ -818,5 +818,8 @@ def pow(x, a):
     # Returns
         A tensor.
     """
-    return av.ops.scale_pow(x, 1, a)
+    if isinstance(a, (int, float)):
+        return av.ops.scale_pow(x, 1, a)
+    else:
+        return av.ops.pow(x, a)
 

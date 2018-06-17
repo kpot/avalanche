@@ -42,6 +42,7 @@ public:
         return nullptr;
     };
 
+
 private:
     ArrayType _result_dtype;
     Shape _result_shape;

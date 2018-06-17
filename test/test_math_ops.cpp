@@ -435,6 +435,48 @@ TEST_CASE("Checking automatic derivations (backprop)") {
         verify_derivatives<float>(context, {weights, biases}, output, 1e-2);
     }
 
+    SECTION("Raising to a scalar power") {
+        auto val1 = Variable::make(
+            "value", {4, 3}, ArrayType::float32);
+        auto context = Context::make_for_device(0);
+        context->init<float>(
+            val1,
+            {0.0f, 1.0f, 2.0f,
+             3.0f, 4.0f, 5.0f,
+             6.0f, 7.0f, 8.0f,
+             9.0f, 10.0f, 11.0f},
+            val1->shape());
+        auto output = FU<SPower>(val1, 0.5, 2);
+        evaluate_and_check<float>(
+            output,
+            {0.0, 0.5, 2.0, 4.5, 8.0, 12.5, 18.0, 24.5, 32.0, 40.5, 50.0, 60.5},
+            Shape({4, 3}),
+            context);
+        verify_derivatives<float>(context, {val1}, output, 1e-2);
+    }
+
+    SECTION("Raising to a power (x ^ y) with broadcasting") {
+        auto val1 = Variable::make(
+            "value", {4, 3}, ArrayType::float32);
+        auto val2 = Variable::make("power", {}, ArrayType::float32);
+        auto context = Context::make_for_device(0);
+        context->init<float>(
+            val1,
+            {0.5f, 1.0f, 2.0f,
+             3.0f, 1.0f, 2.0f,
+             3.0f, 1.0f, 2.0f,
+             3.0f, 1.0f, 2.0f},
+            val1->shape());
+        context->init<float>(val2, {2}, val2->shape());
+        auto output = F<Power>(val1, val2);
+        evaluate_and_check<float>(
+            output,
+            {0.25, 1, 4, 9, 1, 4, 9, 1, 4, 9, 1, 4},
+            Shape({4, 3}),
+            context);
+        verify_derivatives<float>(context, {val1, val2}, output, 1e-2);
+    }
+
     SECTION("Fully-connected feed-forward layer with sigmoid activation") {
         auto inputs = Variable::make("inputs", {3, 3}, ArrayType::float32);
         auto weights = Variable::make("weights", {3, 3}, ArrayType::float32);

@@ -59,25 +59,10 @@ public:
                        std::size_t num_bytes, ArrayType array_type,
                        const Shape &shape);
 
-    bool get(NodeId node_id, MultiArrayRef &result) const {
-        auto cached = find(node_id);
-        if (cached != this->end()) {
-            result = cached->second;
-            return true;
-        }
-        result = nullptr;
-        return false;
-    }
+    bool get(NodeId node_id, MultiArrayRef &result) const;
 
     // Works like get() but throws exception if node wasn't found
-    MultiArrayRef eval(const NodeRef &node) const {
-        MultiArrayRef result;
-        if (!get(node->id, result)) {
-            throw std::invalid_argument(
-                "Given graph node has not been initialized yet");
-        }
-        return result;
-    }
+    MultiArrayRef eval(const NodeRef &node) const;
 
     BufferPoolRef device_pool() { return _buffer_pool; };
 

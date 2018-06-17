@@ -97,4 +97,36 @@ const NodeRef Divide::apply_chain_rule(const NodeRef &wrt_input,
 }
 
 
+const NodeRef Power::apply_chain_rule(const NodeRef &wrt_input,
+                                      const NodeRef &d_target_wrt_this,
+                                      const NodeRefList &all_inputs) const {
+    NodeRef part_derivative = nullptr;
+    if (all_inputs[0] == wrt_input) {
+        // with respect to left operand (named "x" below)
+        // d(x^a)/dx = a * x^(a - 1)
+        part_derivative = F<Multiply>(
+            d_target_wrt_this,
+            F<Multiply>(
+                all_inputs[1],
+                F<Power>(all_inputs[0],
+                         F<Minus>(all_inputs[1],
+                                  Constant::ones_like(all_inputs[1])))));
+    } else if (all_inputs[1] == wrt_input) {
+        // with respect to right_operand (name "a" below)
+        // d(x^a)/da = x^a * log(x)
+        part_derivative = F<Multiply>(
+            d_target_wrt_this,
+            // TODO: Can be improved by replacing F<Power>(...) with a reference to this node (which would require to change the signature of apply_chain_rule method everywhere)
+            F<Multiply>(
+                F<Power>(all_inputs[0], all_inputs[1]),
+                F<Log>(all_inputs[0])));
+    } else {
+        throw std::logic_error(messages::CANT_DIFF_UNEXISTING_INPUT_MESSAGE);
+    }
+    auto derivative = F<ReduceSum>(part_derivative, wrt_input, true);
+    if (derivative->shape() != wrt_input->shape()) {
+        derivative = FU<Reshape>(derivative, wrt_input->shape());
+    }
+    return derivative;
+}
 } // namespace
