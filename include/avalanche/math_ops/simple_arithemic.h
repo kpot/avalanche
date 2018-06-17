@@ -9,8 +9,10 @@ namespace avalanche {
 class Plus : public BroadcastedBinaryOp {
 public:
     Plus(const NodeRef &left, const NodeRef &right)
-        : BroadcastedBinaryOp(left, right, "plus",
-                              "a + b", left->dtype()) {}
+        : BroadcastedBinaryOp(
+            left, right, "plus",
+            "a + b",
+            choose_common_array_type(left->dtype(), right->dtype())) {}
 
     std::string name() const { return "+"; }
 
@@ -24,8 +26,10 @@ public:
 class Minus : public BroadcastedBinaryOp {
 public:
     Minus(const NodeRef &left, const NodeRef &right)
-        : BroadcastedBinaryOp(left, right, "minus",
-                              "a - b", left->dtype()) {}
+        : BroadcastedBinaryOp(
+            left, right, "minus",
+            "a - b",
+            choose_common_array_type(left->dtype(), right->dtype())) {}
 
     std::string name() const { return "-"; }
 
@@ -39,8 +43,9 @@ public:
 class Multiply : public BroadcastedBinaryOp {
 public:
     Multiply(const NodeRef &left, const NodeRef &right)
-        : BroadcastedBinaryOp(left, right, "multiply",
-                              "a * b", left->dtype()) {}
+        : BroadcastedBinaryOp(
+            left, right, "multiply",
+            "a * b", choose_common_array_type(left->dtype(), right->dtype())) {}
 
     std::string name() const { return "*"; }
 
@@ -54,15 +59,18 @@ public:
 class Divide : public BroadcastedBinaryOp {
 public:
     Divide(const NodeRef &left, const NodeRef &right)
-        : BroadcastedBinaryOp(left, right, "divide",
-                              cl_operation_code(left->dtype()),
-                              left->dtype()) {}
+        : BroadcastedBinaryOp(
+            left, right, "divide",
+            cl_operation_code(left->dtype(), right->dtype()),
+            choose_common_array_type(left->dtype(), right->dtype())) {}
 
     std::string name() const { return "/"; }
 
-    static std::string cl_operation_code(ArrayType dtype) {
-        if (dtype == ArrayType::float32) {
-            return "native_divide(a, b)";
+    static std::string
+    cl_operation_code(ArrayType left_dtype, ArrayType right_dtype) {
+        if (choose_common_array_type(left_dtype, right_dtype) 
+                == ArrayType::float32) {
+            return "native_divide((float)a, (float)b)";
         }
         return "a / b";
     }

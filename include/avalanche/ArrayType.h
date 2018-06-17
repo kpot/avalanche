@@ -129,6 +129,34 @@ inline std::uint64_t cast_to_value_of_array_type(ArrayType dtype, T value) {
     return result;
 }
 
+
+/**
+ * Mimics the rules C++ uses for operations on mixed types, such
+ * as multiplication of an integer and a float numbers.
+ * Returns a common type to which all arguments should be converted.
+ **/
+inline ArrayType choose_common_array_type(ArrayType dtype1, ArrayType dtype2) {
+    bool a_is_floating = is_floating_array_type(dtype1);
+    bool b_is_floating = is_floating_array_type(dtype2);
+    if (a_is_floating) {
+        if (b_is_floating) {
+            return static_cast<ArrayType>(
+                std::max(static_cast<int>(dtype1),
+                         static_cast<int>(dtype2)));
+        } else {
+            return dtype1;
+        }
+    } else {
+        if (b_is_floating) {
+            return dtype2;
+        } else {
+            return static_cast<ArrayType>(
+                std::max(static_cast<int>(dtype1),
+                         static_cast<int>(dtype2)));
+        }
+    }
+}
+
 } // namespace
 
 #endif //AVALANCHE_ARRAYTYPE_H

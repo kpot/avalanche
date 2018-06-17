@@ -13,31 +13,32 @@ namespace avalanche {
 constexpr const std::size_t WORK_GROUP_SIZE = 64;
 
 
-std::string broadcasing_kernel_name(
-        const std::string &operation_name,
-        ArrayType source_dtype,
-        ArrayType output_dtype) {
+std::string broadcasing_kernel_name(const std::string &operation_name,
+                                    ArrayType left_dtype,
+                                    ArrayType righ_dtype,
+                                    ArrayType output_dtype) {
     return fmt::format(
-        "broadcasted_{operation_name}_{source_type}_{output_type}",
+        "broadcasted_{operation_name}_{left_type}_{right_type}_{output_type}",
         fmt::arg("operation_name", operation_name),
-        fmt::arg("source_type", cl_type_name_of_array(source_dtype)),
+        fmt::arg("left_type", cl_type_name_of_array(left_dtype)),
+        fmt::arg("right_type", cl_type_name_of_array(righ_dtype)),
         fmt::arg("output_type", cl_type_name_of_array(output_dtype)));
 }
 
-std::string generate_broadcasting_kernel(
-    const std::string &operation_name,
-    ArrayType source_dtype,
-    ArrayType output_dtype,
-    const std::string &operation_code,
-    int work_group_size) {
+std::string generate_broadcasting_kernel(const std::string &operation_name,
+                                         ArrayType left_dtype,
+                                         ArrayType right_dtype,
+                                         ArrayType output_dtype,
+                                         const std::string &operation_code,
+                                         int work_group_size) {
     constexpr const char *kernel_template = R"clkernel(
 #pragma OPENCL EXTENSION cl_khr_fp64 : enable
 
 __kernel __attribute__((reqd_work_group_size({work_group_size}, 1, 1)))
 void {kernel_name}(
-         __global {source_type} *source1,
+         __global {left_dtype} *source1,
          const ulong source1_offset,
-         __global {source_type} *source2,
+         __global {right_dtype} *source2,
          const ulong source2_offset,
          __global {output_type} *output,
          __global ulong *size_mask1,
@@ -56,8 +57,8 @@ void {kernel_name}(
     source1_index += size_mask1[rank - 1] * index_to_parse;
     source2_index += size_mask2[rank - 1] * index_to_parse;
     if (get_global_id(0) < result_size) {{
-        {source_type} a = source1[source1_offset + source1_index];
-        {source_type} b = source2[source2_offset + source2_index];
+        {left_dtype} a = source1[source1_offset + source1_index];
+        {right_dtype} b = source2[source2_offset + source2_index];
         output[get_global_id(0)] = ({output_type})({operation_code});
     }}
 }}
@@ -66,11 +67,12 @@ void {kernel_name}(
     return fmt::format(
         kernel_template,
         fmt::arg("kernel_name",
-                 broadcasing_kernel_name(operation_name,
-                                         source_dtype, output_dtype)),
+                 broadcasing_kernel_name(
+                     operation_name, left_dtype, right_dtype, output_dtype)),
         fmt::arg("operation_code", operation_code),
         fmt::arg("work_group_size", work_group_size),
-        fmt::arg("source_type", cl_type_name_of_array(source_dtype)),
+        fmt::arg("left_dtype", cl_type_name_of_array(left_dtype)),
+        fmt::arg("right_dtype", cl_type_name_of_array(right_dtype)),
         fmt::arg("output_type", cl_type_name_of_array(output_dtype)));
 }
 
@@ -115,21 +117,14 @@ BroadcastedBinaryOp::BroadcastedBinaryOp(const NodeRef &left,
                                          ArrayType output_dtype)
     :_result_dtype{output_dtype},
      _operation_name{operation_name},
-     _kernel_name{broadcasing_kernel_name(
-         operation_name, left->dtype(), output_dtype)},
-     _kernel_source{generate_broadcasting_kernel(
-         operation_name, left->dtype(), output_dtype,
-         operation_cl_code, WORK_GROUP_SIZE)}
+     _kernel_name{
+         broadcasing_kernel_name(
+             operation_name, left->dtype(), right->dtype(), output_dtype)},
+     _kernel_source{
+         generate_broadcasting_kernel(
+             operation_name, left->dtype(), right->dtype(), output_dtype,
+             operation_cl_code, WORK_GROUP_SIZE)}
 {
-    if (left->dtype() != right->dtype()) {
-        throw std::invalid_argument(
-            fmt::format(
-                "You cannot perform broadcast operation on values of different "
-                "types: {}({}, {})",
-                operation_name,
-                array_type_name(left->dtype()),
-                array_type_name(right->dtype())));
-    }
     // Here we calculate only a preliminary result shape for debugging
     // purposes. The real shape can be only evaluated in runtime (`forward`)
     Shape tmp_left_shape_aligned, tmp_right_shape_aligned;

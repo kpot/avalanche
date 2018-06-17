@@ -797,3 +797,29 @@ TEST_CASE("In-place update operations") {
                                   context);
     }
 }
+
+
+TEST_CASE("Choosing common type for operation") {
+    using namespace avalanche;
+    REQUIRE(choose_common_array_type(ArrayType::float32, ArrayType::float64)
+            == ArrayType::float64);
+    REQUIRE(choose_common_array_type(ArrayType::float32, ArrayType::int32)
+            == ArrayType::float32);
+    REQUIRE(choose_common_array_type(ArrayType::int8, ArrayType::int64)
+            == ArrayType::int64);
+    REQUIRE(choose_common_array_type(ArrayType::int16, ArrayType::float16)
+            == ArrayType::float16);
+}
+
+
+
+TEST_CASE("Broadcast operations on mixed types") {
+    SECTION("Mixed Plus") {
+        using namespace avalanche;
+        auto value1 = Constant::tensor<float>({0, 1, 2, 3}, Shape({4}));
+        auto value2 = Constant::tensor<int>({0, 1, 2, 3}, Shape({4}));
+        auto output = F<Plus>(value1, value2);
+        REQUIRE(output->dtype() == ArrayType::float32);
+        evaluate_and_check<float>(output, {0, 2, 4, 6}, Shape({4}));
+    }
+}
