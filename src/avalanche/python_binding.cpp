@@ -9,6 +9,48 @@
 
 namespace py = pybind11;
 
+//namespace pybind11 { namespace detail {
+//template <> struct type_caster<avalanche::NodeRef> {
+//public:
+//    /**
+//     * This macro establishes the name 'inty' in
+//     * function signatures and declares a local variable
+//     * 'value' of type inty
+//     */
+//PYBIND11_TYPE_CASTER(avalanche::NodeRef, _("NodeRef"));
+//
+//    /**
+//     * Conversion part 1 (Python->C++): convert a PyObject into a inty
+//     * instance or return false upon failure. The second argument
+//     * indicates whether implicit conversions should be applied.
+//     */
+//    bool load(handle src, bool) {
+//        /* Extract PyObject from handle */
+//        PyObject *source = src.ptr();
+//        /* Try converting into a Python integer value */
+//        PyObject *tmp = PyNumber_Long(source);
+//        if (!tmp)
+//            return false;
+//        /* Now try to convert into a C++ int */
+//        value = avalanche::Constant::scalar(static_cast<float>(PyLong_AsLong(tmp)));
+//        Py_DECREF(tmp);
+//        /* Ensure return code was OK (to avoid out-of-range errors etc) */
+//        return !PyErr_Occurred();
+//    }
+//
+////    /**
+////     * Conversion part 2 (C++ -> Python): convert an inty instance into
+////     * a Python object. The second and third arguments are used to
+////     * indicate the return value policy and parent object (for
+////     * ``return_value_policy::reference_internal``) and are generally
+////     * ignored by implicit casters.
+////     */
+////    static handle cast(inty src, return_value_policy /* policy */, handle /* parent */) {
+////        return PyLong_FromLong(src.long_value);
+////    }
+//};
+//}}
+
 namespace avalanche {
 
 class PyBaseNode : public BaseNode {
@@ -48,6 +90,7 @@ public:
             BaseNode,
             inputs);
     };
+
 };
 
 
@@ -177,7 +220,8 @@ py::array array_to_numpy_template(MultiArrayRef &array) {
     auto reading_is_done = (
         array->buffer_when_ready()
              ->read_data(info.ptr,
-                         static_cast<std::size_t>(info.size * info.itemsize)));
+                         static_cast<std::size_t>(info.size * info.itemsize),
+                         0));
     reading_is_done.wait();
     return result;
 }
@@ -201,7 +245,7 @@ Initializer numpy_value_initializer(py::array value) {
         ArrayType array_type = dtype_to_avalanche_array_type(value.dtype());
         auto result = context.device_pool()->make_array(shape, array_type);
         auto writing_is_done = result->buffer_when_ready()->write_data(
-            info.ptr, static_cast<std::size_t>(info.size * info.itemsize));
+            info.ptr, static_cast<std::size_t>(info.size * info.itemsize), 0);
         // FIXME: Probably the waiting is unnecessary, since this event is a "completion event" anyway.
         writing_is_done.wait();
         return result;
@@ -223,6 +267,17 @@ NodeRef make_constant_from_numpy(py::array value, const std::string &name) {
         static_cast<std::size_t>(info.size * info.itemsize),
         array_type,
         shape);
+}
+
+NodeRef placeholder(const std::string &name,
+                    const std::vector<ShapeDim> &shape_dims,
+                    ArrayType dtype) {
+    return Variable::make(name, shape_dims, dtype);
+}
+
+
+NodeRef cast(const NodeRef &value, ArrayType dtype) {
+    return FU<Cast>(value, dtype);
 }
 
 
@@ -259,6 +314,12 @@ PYBIND11_MODULE(pyvalanche, m) {
         .export_values();
 
     py::class_<BaseNode, NodeRef>(m, "BaseNode", py::dynamic_attr())
+        .def(py::init(&Constant::scalar<float>))
+        .def(py::init([](long value) {
+            // FIXME: Cleanup
+            std::cout << "Converting value " << value << " to a scalar tensor\n";
+            return Constant::scalar(ArrayType::float32, static_cast<float>(value));
+        }))
         .def("__str__", &BaseNode::to_string)
         .def("__repr__", &BaseNode::repr)
         .def("inputs", &BaseNode::inputs)
@@ -280,6 +341,8 @@ PYBIND11_MODULE(pyvalanche, m) {
             return FU<Scale>(node, value);
         })
         ;
+    py::implicitly_convertible<float, BaseNode>();
+    py::implicitly_convertible<long, BaseNode>();
 
     py::class_<MultiArray, MultiArrayRef>(m, "MultiArray")
         .def("asnumpy", &array_to_numpy);
@@ -314,6 +377,10 @@ PYBIND11_MODULE(pyvalanche, m) {
           "Creates a new variable",
           py::arg("name"), py::arg("shape_dims"), py::arg("dtype"),
           py::arg("initializer"));
+    m.def("placeholder",
+          &placeholder,
+          "Creates a new variable without initialization",
+          py::arg("name"), py::arg("shape_dims"), py::arg("dtype"));
 
     m.def("variable_from_node",
           &Variable::make_from_node,
@@ -326,6 +393,7 @@ PYBIND11_MODULE(pyvalanche, m) {
     m.def("random_uniform", &UniformRandom::make);
 
     m.def("value_initializer", &numpy_value_initializer);
+    m.def("gradients", &build_gradients);
 
     py::module ops = m.def_submodule("ops", "Available operations");
 
@@ -342,6 +410,11 @@ PYBIND11_MODULE(pyvalanche, m) {
         .def("log", &FU<Log>)
         .def("exp", &FU<Exp>)
         .def("square", &FU<Square>)
+        .def("sqrt", &FU<Sqrt>)
+        .def("cast", &cast)
+        .def("scale_pow", [](const NodeRef &input, float scale, float power) {
+            return FU<SPower>(input, scale, power);
+        })
         .def("plus", &SimpleBinaryOp<Plus>,
              "Elem-wise addition with broadcasting")
         .def("minus", &SimpleBinaryOp<Minus>,
@@ -350,6 +423,26 @@ PYBIND11_MODULE(pyvalanche, m) {
              "Elem-wise division with broadcasting")
         .def("multiply", &SimpleBinaryOp<Multiply>,
              "Elem-wise multiplication with broadcasting")
+        .def("equal", &SimpleBinaryOp<Equal>,
+             "Elem-wise equality check with broadcasting")
+        .def("not_equal", &SimpleBinaryOp<NotEqual>,
+             "Elem-wise inequality check with broadcasting")
+        .def("less", &SimpleBinaryOp<Less>,
+             "Elem-wise truth value of (x < y) with broadcasting")
+        .def("less_equal", &SimpleBinaryOp<LessEqual>,
+             "Elem-wise truth value of (x <= y) with broadcasting")
+        .def("greater", &SimpleBinaryOp<Greater>,
+             "Elem-wise truth value of (x > y) with broadcasting")
+        .def("greater_equal", &SimpleBinaryOp<GreaterEqual>,
+             "Elem-wise truth value of (x >= y) with broadcasting")
+        .def("less", &SimpleBinaryOp<Less>,
+             "Elem-wise truth value of (x < y) with broadcasting")
+        .def("less_equal", &SimpleBinaryOp<LessEqual>,
+             "Elem-wise truth value of (x <= y) with broadcasting")
+        .def("update_add", &SimpleBinaryOp<UpdateAdd>,
+             "In-place addition like +=")
+        .def("update_sub", &SimpleBinaryOp<UpdateSub>,
+             "In-place subtraction like -=")
         .def("matmul", &matmul,
              py::arg_v("a", "Left matrix"),
              py::arg_v("b", "Right matrix"),

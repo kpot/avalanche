@@ -89,7 +89,8 @@ public:
                 "The vector for storing the data is incompatible "
                 "with the type of the array.");
         }
-        auto reading_is_done = buffer_when_ready()->read_into_vector(data);
+        auto reading_is_done = buffer_when_ready()->read_into_vector(
+            data, _buffer_offset);
         reading_is_done.wait();
     }
 
@@ -101,16 +102,18 @@ public:
                 "The data vector is incompatible "
                     "with the type of the array.");
         }
-        auto writing_is_done = buffer_when_ready()->write_from_vector(data);
+        auto writing_is_done = buffer_when_ready()->write_from_vector(
+            data, _buffer_offset);
         writing_is_done.wait();
     }
 
     static MultiArrayRef from_buffer(
             const CLBufferRef &buffer,
             const Shape &shape,
-            const ArrayType dtype) {
+            const ArrayType dtype,
+            const std::size_t offset = 0) {
         return std::shared_ptr<MultiArray>(
-            new MultiArray(buffer, shape, dtype));
+            new MultiArray(buffer, shape, dtype, offset));
     }
 
     static MultiArrayRef make(BufferPoolRef device_pool, Shape shape,
@@ -130,18 +133,22 @@ public:
             dtype);
     }
 
+    std::size_t buffer_offset() { return _buffer_offset; }
 
 private:
     MultiArray(
         const CLBufferRef &buffer,
         const Shape &shape,
-        const ArrayType dtype)
+        const ArrayType dtype,
+        const std::size_t buffer_offset = 0)
         : _buffer{buffer},
+          _buffer_offset{buffer_offset},
           _shape{shape},
           _dtype{dtype}
     {}
 
     std::shared_ptr<CLBuffer> _buffer;
+    std::size_t _buffer_offset;  // Offset in records (not bytes)
     Shape _shape;
     ArrayType _dtype;
 };

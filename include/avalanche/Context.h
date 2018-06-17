@@ -42,7 +42,7 @@ public:
         check_data_shape_compatibility(shape, node->shape());
         auto array = device_pool()->make_array(
             shape, dtype_of_static_type<T>);
-        auto writing_is_done = array->buffer_unsafe()->write_from_vector(data);
+        auto writing_is_done = array->buffer_unsafe()->write_from_vector(data, 0);
         init(node, array);
         writing_is_done.wait();
         return array;

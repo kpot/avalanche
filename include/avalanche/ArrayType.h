@@ -74,6 +74,11 @@ inline std::size_t array_type_size(ArrayType t) {
     return ArrayTypeSizes[static_cast<int>(t)];
 }
 
+inline bool is_floating_array_type(ArrayType t) {
+    return (t == ArrayType::float32 || t == ArrayType::float16 ||
+            t == ArrayType::float64);
+}
+
 
 /**
  * similar to `to_array_type`, only more general

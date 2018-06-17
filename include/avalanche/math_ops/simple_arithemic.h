@@ -6,13 +6,13 @@
 
 namespace avalanche {
 
-struct Plus : BroadcastedBinaryOp {
-
+class Plus : public BroadcastedBinaryOp {
+public:
     Plus(const NodeRef &left, const NodeRef &right)
-        : BroadcastedBinaryOp(left, right) {}
+        : BroadcastedBinaryOp(left, right, "plus",
+                              "a + b", left->dtype()) {}
 
     std::string name() const { return "+"; }
-    const char* kernel_op_name() const final { return "plus"; }
 
     const NodeRef apply_chain_rule(
         const NodeRef &wrt_input,
@@ -21,13 +21,13 @@ struct Plus : BroadcastedBinaryOp {
 };
 
 
-struct Minus : BroadcastedBinaryOp {
-
+class Minus : public BroadcastedBinaryOp {
+public:
     Minus(const NodeRef &left, const NodeRef &right)
-        : BroadcastedBinaryOp(left, right) {}
+        : BroadcastedBinaryOp(left, right, "minus",
+                              "a - b", left->dtype()) {}
 
     std::string name() const { return "-"; }
-    const char* kernel_op_name() const final { return "minus"; }
 
     const NodeRef apply_chain_rule(
         const NodeRef &wrt_input,
@@ -36,13 +36,13 @@ struct Minus : BroadcastedBinaryOp {
 };
 
 
-struct Multiply : BroadcastedBinaryOp {
-
+class Multiply : public BroadcastedBinaryOp {
+public:
     Multiply(const NodeRef &left, const NodeRef &right)
-        :BroadcastedBinaryOp(left, right) {}
+        : BroadcastedBinaryOp(left, right, "multiply",
+                              "a * b", left->dtype()) {}
 
     std::string name() const { return "*"; }
-    const char* kernel_op_name() const final { return "multiply"; }
 
     const NodeRef apply_chain_rule(
         const NodeRef &wrt_input,
@@ -51,13 +51,21 @@ struct Multiply : BroadcastedBinaryOp {
 };
 
 
-struct Divide : BroadcastedBinaryOp {
-
+class Divide : public BroadcastedBinaryOp {
+public:
     Divide(const NodeRef &left, const NodeRef &right)
-        :BroadcastedBinaryOp(left, right) {}
+        : BroadcastedBinaryOp(left, right, "divide",
+                              cl_operation_code(left->dtype()),
+                              left->dtype()) {}
 
     std::string name() const { return "/"; }
-    const char* kernel_op_name() const final { return "divide"; }
+
+    static std::string cl_operation_code(ArrayType dtype) {
+        if (dtype == ArrayType::float32) {
+            return "native_divide(a, b)";
+        }
+        return "a / b";
+    }
 
     const NodeRef apply_chain_rule(
         const NodeRef &wrt_input,

@@ -98,7 +98,7 @@ Constant::tensor(const std::string &name,
                                      ExecutionCache &cache) -> MultiArrayRef {
             auto result = context.device_pool()->make_array(shape, dtype);
             // write_from_vector will update the result's completion event
-            result->buffer_unsafe()->write_from_vector(copy_of_data);
+            result->buffer_unsafe()->write_from_vector(copy_of_data, 0);
             return result;
         },
         shape,

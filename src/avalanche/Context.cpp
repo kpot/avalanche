@@ -37,7 +37,7 @@ Context::init(const NodeRef &node, const void *data, std::size_t num_bytes,
     check_data_shape_compatibility(shape, node->shape());
     auto array = device_pool()->make_array(shape, array_type);
     auto writing_is_done = (
-        array->buffer_unsafe()->write_data(data, num_bytes));
+        array->buffer_unsafe()->write_data(data, num_bytes, 0));
     init(node, array);
     writing_is_done.wait();
     return array;

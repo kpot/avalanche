@@ -55,12 +55,13 @@ public:
      * @param params
      */
     ConstTransform(const NodeRef &input,
+                   ArrayType output_type,
                    const std::vector<TransformVar> &variables,
                    const std::string &expression,
                    const std::string &lh_name,
                    const std::string &rh_name,
                    const std::array<float, NumParams> &params)
-        :result_dtype{input->dtype()},
+        :result_dtype{output_type},
          result_shape{input->shape()},
          left_name{lh_name},
          right_name{rh_name},
@@ -69,6 +70,7 @@ public:
          opencl_operation{expression},
          kernel_source{
              generate_kernel_source(cl_type_name_of_array(input->dtype()),
+                                    cl_type_name_of_array(output_type),
                                     opencl_operation)},
          program_name{opencl_operation
                       + cl_type_name_of_array(input->dtype())}
@@ -80,7 +82,7 @@ public:
 
     const Shape& shape() const { return result_shape; }
 
-    ArrayType dtype() const { return result_dtype; }
+    virtual ArrayType dtype() const { return result_dtype; }
 
     const std::string& name() const { return opencl_operation; }
 
@@ -121,25 +123,25 @@ public:
         throw std::logic_error("not implemented");
     }
 
-    std::string generate_kernel_source(
-            const std::string &kernel_type_name,
-            const std::string &expression) const {
+    std::string generate_kernel_source(const std::string &input_type_name,
+                                       const std::string &output_type_name,
+                                       const std::string &expression) const {
         std::ostringstream o;
         o << "#pragma OPENCL EXTENSION cl_khr_fp64 : enable\n"
             "__kernel __attribute__((reqd_work_group_size(64, 1, 1)))\n"
             "void transform(\n"
-          << "\t__global " << kernel_type_name << " *source,\n"
-          << "\t__global " << kernel_type_name << " *output,\n"
+          << "\t__global " << input_type_name << " *source,\n"
+          << "\t__global " << output_type_name << " *output,\n"
           << "\tconst ulong result_size\n" << (NumParams > 0 ? ',' : ')');
         for (std::size_t i = 0; i < NumParams; ++i) {
-            o << "\tconst " << kernel_type_name << " p"
+            o << "\tconst " << output_type_name << " p"
               << i << (i == NumParams - 1 ? ')' : ',') << '\n';
         }
         o << "{\n"
           << "\tconst size_t i = get_global_id(0);\n"
-          << "\tconst " << kernel_type_name << " v = source[i];\n";
+          << "\tconst " << output_type_name << " v = source[i];\n";
         for (auto &var: variables) {
-            o << "\tconst " << kernel_type_name << " "
+            o << "\tconst " << output_type_name << " "
               << var.name << " = " << var.expression << ";\n";
         }
         o << "\tif (i < result_size) { output[i] = " << expression
@@ -199,6 +201,7 @@ public:
     SPower(const NodeRef &input, float scale, float power)
         :ConstTransform<2>(
             input,
+            input->dtype(),
             {},
             opencl_expression(input->dtype()),
             std::string("pow(") + std::to_string(scale) + "*",
@@ -218,6 +221,7 @@ public:
     Square(const NodeRef &input)
         :ConstTransform<0>(
         input,
+        input->dtype(),
         {},
         opencl_expression(input->dtype()),
         "square(", ")",
@@ -235,7 +239,8 @@ public:
 class Recip : public ConstTransform<0> {
 public:
     Recip(const NodeRef &input)
-        : ConstTransform<0>(input, {}, opencl_expression(input->dtype()),
+        : ConstTransform<0>(input, input->dtype(), {},
+                            opencl_expression(input->dtype()),
                             "recip(", ")", {}) {}
 
     std::string opencl_expression(ArrayType dtype) const {
@@ -256,7 +261,8 @@ public:
 class Scale : public ConstTransform<1> {
 public:
     Scale(const NodeRef &input, float value)
-        : ConstTransform<1>(input, {}, opencl_expression(input->dtype()),
+        : ConstTransform<1>(input, input->dtype(), {},
+                            opencl_expression(input->dtype()),
                             std::to_string(value) + " * ", "", {value})
     {}
 
@@ -270,10 +276,39 @@ public:
                      const NodeRefList &all_inputs) const override;
 };
 
+
+class Cast : public ConstTransform<1> {
+public:
+    Cast(const NodeRef &input, ArrayType another_type)
+        : ConstTransform<1>(
+            input, another_type, {}, opencl_expression(input->dtype()),
+            "cast(", std::string(", ") + array_type_name(another_type) + ")",
+            {}),
+          _another_type{another_type}
+    {
+    }
+
+    std::string opencl_expression(ArrayType dtype) const {
+        return "v";
+    }
+
+    const NodeRef
+    apply_chain_rule(const NodeRef &wrt_input,
+                     const NodeRef &d_target_wrt_this,
+                     const NodeRefList &all_inputs) const override;
+
+    ArrayType dtype() const override { return _another_type; }
+
+private:
+    ArrayType _another_type;
+};
+
+
 class Log : public ConstTransform<0> {
 public:
     explicit Log(const NodeRef &input)
-        : ConstTransform<0>(input, {}, opencl_expression(input->dtype()),
+        : ConstTransform<0>(input, input->dtype(), {},
+                            opencl_expression(input->dtype()),
                             "log(", ")", {}) {}
 
     std::string opencl_expression(ArrayType dtype) const {
@@ -290,11 +325,32 @@ public:
     const NodeRef partial_derivative(const NodeRef &input) const override;
 };
 
+class Sqrt : public ConstTransform<0> {
+public:
+    explicit Sqrt(const NodeRef &input)
+        : ConstTransform<0>(input, input->dtype(), {},
+                            opencl_expression(input->dtype()),
+                            "sqrt(", ")", {}) {}
+
+    std::string opencl_expression(ArrayType dtype) const {
+        switch (dtype) {
+            case ArrayType::float32:
+                return "native_sqrt(v)";
+            case ArrayType::float16:
+                return "half_sqrt(v)";
+            default:
+                return "sqrt(v)";
+        }
+    }
+
+    const NodeRef partial_derivative(const NodeRef &input) const override;
+};
 
 class Sigmoid : public ConstTransform<0> {
 public:
     explicit Sigmoid(const NodeRef &input)
-        : ConstTransform<0>(input, {}, opencl_expression(input->dtype()),
+        : ConstTransform<0>(input, input->dtype(), {},
+                            opencl_expression(input->dtype()),
                             "sigmoid(", ")", {}) {}
 
     static std::string opencl_expression(ArrayType dtype) {
@@ -314,7 +370,8 @@ public:
 class Exp : public ConstTransform<0> {
 public:
     explicit Exp(const NodeRef &input)
-        : ConstTransform<0>(input, {}, "native_exp(v)", "exp(", ")", {}) {}
+        : ConstTransform<0>(input, input->dtype(), {},
+                            "native_exp(v)", "exp(", ")", {}) {}
 
     const NodeRef partial_derivative(const NodeRef &input) const override;
 };
@@ -322,7 +379,8 @@ public:
 class Tanh : public ConstTransform<0> {
 public:
     explicit Tanh(const NodeRef &input)
-        : ConstTransform<0>(input, {}, opencl_expression(input->dtype()),
+        : ConstTransform<0>(input, input->dtype(), {},
+                            opencl_expression(input->dtype()),
                             "tanh(", ")", {}) {}
 
     static std::string opencl_expression(ArrayType dtype) {
@@ -336,7 +394,8 @@ public:
 class ReLU : public ConstTransform<0> {
 public:
     explicit ReLU(const NodeRef &input)
-        : ConstTransform<0>(input, {}, opencl_expression(input->dtype()),
+        : ConstTransform<0>(input, input->dtype(), {},
+                            opencl_expression(input->dtype()),
                             "relu(", ")", {}) {}
 
     static std::string opencl_expression(ArrayType dtype) {

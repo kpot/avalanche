@@ -17,6 +17,7 @@
 __kernel __attribute__((reqd_work_group_size(WORK_GROUP_SIZE, 1, 1))) \
 void reduce_##OpName##_##DType ( \
          __global Type *source, \
+         const ulong source_offset, \
          __global Type *output, \
          const ulong result_size, \
          const ulong source_stride, \
@@ -26,7 +27,7 @@ void reduce_##OpName##_##DType ( \
     ulong source_start_index = (output_index / source_block) * source_stride + (output_index % source_block); \
     Type accumulator = (Type) Initial; \
     for (ulong i = 0; i < dim_size; ++i) { \
-        Op(accumulator, source[source_start_index]); \
+        Op(accumulator, source[source_offset + source_start_index]); \
         source_start_index += source_block; \
     } \
     if (output_index < result_size) { output[output_index] = ResultOp(accumulator, dim_size, 1); } \
@@ -72,6 +73,7 @@ void reduce_##OpName##_##DType ( \
 #define full_reduction_template(OpName, DType, Type, Op, ResultOp, Initial) \
 __kernel void step_of_full_reduce_##OpName##_##DType( \
     __global Type *source, \
+    const ulong source_offset, \
     __global Type *output, \
     __local Type *scratch, \
     const ulong length, \
@@ -82,9 +84,9 @@ __kernel void step_of_full_reduce_##OpName##_##DType( \
     ulong grid_size = 2 * get_global_size(0); \
     scratch[local_id] = (Type) Initial; \
     while (i < length) { \
-        Op(scratch[local_id], source[i]); \
+        Op(scratch[local_id], source[source_offset + i]); \
         if (i + get_local_size(0) < length) { \
-            Op(scratch[local_id], source[i + get_local_size(0)]); \
+            Op(scratch[local_id], source[source_offset + i + get_local_size(0)]); \
         } \
         i += grid_size; \
     } \

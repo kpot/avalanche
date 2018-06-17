@@ -16,7 +16,7 @@ constexpr char cl_sources_of_random_generators[] = {
 #include "avalanche/kernels/random_generator.hex"
 };
 
-constexpr std::size_t work_group_size = 64;
+constexpr std::size_t WORK_GROUP_SIZE = 64;
 
 cl::Program load_random_generators_program(cl::CommandQueue &queue) {
     auto context = get_context_from_queue(queue);
@@ -46,11 +46,11 @@ UniformRandom::generate_uniform_random(const MultiArrayRef &seeds) const {
     std::vector<cl::Event> wait_for_events;
     wait_for_events.push_back(seeds->buffer_unsafe()->completion_event());
     output->add_dependencies({seeds});
-    const auto work_items = make_divisible_by(work_group_size, seeds->size());
+    const auto work_items = make_divisible_by(WORK_GROUP_SIZE, seeds->size());
     cl::Event result_event;
     queue.enqueueNDRangeKernel(
         kernel, cl::NullRange,
-        cl::NDRange(work_items), cl::NDRange(work_group_size),
+        cl::NDRange(work_items), cl::NDRange(WORK_GROUP_SIZE),
         &wait_for_events, &result_event);
     output->set_completion_event(result_event);
     return output;
@@ -64,12 +64,12 @@ void seed_uniform_random(MultiArrayRef &seeds, std::uint64_t base_seed) {
     KernelType kernel(program, "seed_uniform_random");
     CLBufferRef source_buffer = seeds->buffer_unsafe();
     std::vector<cl::Event> wait_for_events;
-    const auto work_items = make_divisible_by(work_group_size, seeds->size());
+    const auto work_items = make_divisible_by(WORK_GROUP_SIZE, seeds->size());
     cl::Event generation_is_done = kernel(
         cl::EnqueueArgs(queue,
                         wait_for_events,
                         cl::NDRange(work_items),
-                        cl::NDRange(work_group_size)),
+                        cl::NDRange(WORK_GROUP_SIZE)),
         source_buffer->cl_buffer_unsafe(),
         static_cast<cl_ulong>(seeds->size()),
         static_cast<cl_ulong>(base_seed));

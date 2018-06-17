@@ -104,29 +104,31 @@ const cl::Buffer& CLBuffer::cl_buffer_when_ready() const {
  * valid until the writing is done.
  */
 const cl::Event &
-CLBuffer::write_data(const void *data, const std::size_t num_bytes) {
+CLBuffer::write_data(const void *data, const std::size_t num_bytes,
+                     const std::size_t dest_offset_in_bytes) {
     if (num_bytes > byte_size()) {
         throw std::invalid_argument(
             "Too much data for this buffer");
     }
     cl::Event ready_event;
     pool_queue().enqueueWriteBuffer(
-        _cl_buffer, CL_FALSE, 0,
+        _cl_buffer, CL_FALSE, dest_offset_in_bytes,
         num_bytes, data, nullptr, &ready_event);
     set_completion_event(ready_event);
     return _ready_event;
 }
 
 cl::Event CLBuffer::read_data(
-    void *buffer,
-    size_t buffer_size,
-    const std::vector<cl::Event> *wait_for_events) const {
+        void *buffer,
+        std::size_t buffer_size,
+        std::size_t source_offset_in_bytes,
+        const std::vector<cl::Event> *wait_for_events) const {
     if (byte_size() > buffer_size) {
         throw std::invalid_argument("The buffer is too small for the data");
     }
     cl::Event ready_event;
     pool_queue().enqueueReadBuffer(
-        _cl_buffer, CL_FALSE, 0,
+        _cl_buffer, CL_FALSE, source_offset_in_bytes,
         _size, buffer, wait_for_events, &ready_event);
     return ready_event;
 }

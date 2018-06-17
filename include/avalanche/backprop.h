@@ -23,6 +23,14 @@ GradTable build_back_propagation_graph(
     const NodeRefList &with_respect_to);
 
 
+/**
+ * Acts similarly to keras.backend.gradient, returning list of gradients
+ * for every variable listed in `with_respect_to`.
+ * See `build_back_propagation_graph` for more info.
+ */
+NodeRefList build_gradients(const NodeRef &target,
+                            const NodeRefList &with_respect_to);
+
 } // namespace
 
 #endif //AVALANCHE_BACKPROP_H

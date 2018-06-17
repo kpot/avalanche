@@ -21,7 +21,7 @@ constexpr char cl_sources_of_random_generators[] = {
 #include "avalanche/kernels/reductions.hex"
 };
 
-constexpr std::size_t work_group_size = 64;
+constexpr std::size_t WORK_GROUP_SIZE = 64;
 
 
 Reduction::Reduction(const NodeRef &input)
@@ -155,7 +155,7 @@ MultiArrayRef Reduction::partial_reduction(
     auto queue = pool->cl_queue();
     auto program = load_reduction_program(queue);
     using KernelType = cl::KernelFunctor<
-        const cl::Buffer&, const cl::Buffer&,
+        const cl::Buffer&, cl_ulong, const cl::Buffer&,
         cl_ulong, cl_ulong, cl_ulong, cl_ulong>;
     KernelType kernel(program, get_kernel_name(true));
     CLBufferRef result_buffer;
@@ -167,14 +167,15 @@ MultiArrayRef Reduction::partial_reduction(
             step.result_size * array_type_size(_result_dtype));
         result_buffer->add_dependencies({source_buffer});
         const auto work_items = make_divisible_by(
-            work_group_size, step.result_size);
+            WORK_GROUP_SIZE, step.result_size);
 
         cl::Event reduction_is_done = kernel(
             cl::EnqueueArgs(queue,
                             wait_for_events,
                             cl::NDRange(work_items),
-                            cl::NDRange(work_group_size)),
+                            cl::NDRange(WORK_GROUP_SIZE)),
             source_buffer->cl_buffer_unsafe(),
+            static_cast<cl_ulong>(value->buffer_offset()),
             result_buffer->cl_buffer_unsafe(),
             static_cast<cl_ulong>(step.result_size),
             static_cast<cl_ulong>(step.source_stride),
@@ -252,9 +253,9 @@ MultiArrayRef Reduction::full_reduction(const MultiArrayRef &value) const {
     auto kernel_name = get_kernel_name(false);
     auto kernel = cl::Kernel(program, kernel_name.c_str());
     const std::size_t step1_work_items = (
-        work_group_size * optimal_num_work_groups);
+        WORK_GROUP_SIZE * optimal_num_work_groups);
     const std::size_t step1_scratchpad_size = (
-        array_type_size(_result_dtype) * work_group_size);
+        array_type_size(_result_dtype) * WORK_GROUP_SIZE);
     auto wait_for_events = make_event_list(
         {value->buffer_unsafe()->completion_event()});
     auto step1_buffer = pool->reserve_buffer(
@@ -262,29 +263,31 @@ MultiArrayRef Reduction::full_reduction(const MultiArrayRef &value) const {
     step1_buffer->set_label(__func__, __LINE__);
     step1_buffer->add_dependencies({value->buffer_unsafe()});
     kernel.setArg(0, value->cl_buffer_unsafe());
-    kernel.setArg(1, step1_buffer->cl_buffer_unsafe());
-    kernel.setArg(2, static_cast<cl_ulong>(step1_scratchpad_size), nullptr);
-    kernel.setArg(3, static_cast<cl_ulong>(value->shape().size()));
-    kernel.setArg(4, static_cast<cl_int>(CL_TRUE));
+    kernel.setArg(1, static_cast<cl_ulong>(value->buffer_offset()));
+    kernel.setArg(2, step1_buffer->cl_buffer_unsafe());
+    kernel.setArg(3, static_cast<cl_ulong>(step1_scratchpad_size), nullptr);
+    kernel.setArg(4, static_cast<cl_ulong>(value->shape().size()));
+    kernel.setArg(5, static_cast<cl_int>(CL_TRUE));
     cl::Event step_is_done;
     queue.enqueueNDRangeKernel(
         kernel,
         cl::NullRange,
         cl::NDRange(step1_work_items),
-        cl::NDRange(work_group_size),
+        cl::NDRange(WORK_GROUP_SIZE),
         &wait_for_events,
         &step_is_done);
     // Full reduction always results in a scalar
     auto result = pool->make_array(Shape(), _result_dtype);
     result->add_dependencies({step1_buffer});
     kernel.setArg(0, step1_buffer->cl_buffer_unsafe());
-    kernel.setArg(1, result->cl_buffer_unsafe());
+    kernel.setArg(1, static_cast<cl_ulong>(0));
+    kernel.setArg(2, result->cl_buffer_unsafe());
     kernel.setArg(
-        2,
+        3,
         array_type_size(_result_dtype) * (optimal_num_work_groups / 2),
         nullptr);
-    kernel.setArg(3, static_cast<cl_ulong>(optimal_num_work_groups));
-    kernel.setArg(4, static_cast<cl_int>(CL_FALSE));
+    kernel.setArg(4, static_cast<cl_ulong>(optimal_num_work_groups));
+    kernel.setArg(5, static_cast<cl_int>(CL_FALSE));
     wait_for_events[0] = std::move(step_is_done);
     cl::Event step2_is_done;
     queue.enqueueNDRangeKernel(

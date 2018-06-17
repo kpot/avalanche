@@ -106,4 +106,19 @@ GradTable build_back_propagation_graph(const NodeRef &target,
     return grad_table;
 }
 
+/**
+ * Acts similarly to keras.backend.gradient, returning list of gradients
+ * for every variable listed in `with_respect_to`.
+ * See `build_back_propagation_graph` for more info.
+ */
+NodeRefList build_gradients(const NodeRef &target,
+                            const NodeRefList &with_respect_to) {
+    NodeRefList result;
+    auto grad_table = build_back_propagation_graph(target, with_respect_to);
+    for (const NodeRef &var: with_respect_to) {
+        result.push_back(grad_table[var]);
+    }
+    return result;
+}
+
 } // namespace

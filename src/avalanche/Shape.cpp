@@ -4,6 +4,7 @@
 #include <sstream>
 
 #include <fmt/format.h>
+//#include "backward.hpp"
 
 #include "avalanche/Shape.h"
 
@@ -12,6 +13,9 @@ namespace avalanche {
 std::size_t avalanche::Shape::size() const {
     if (std::any_of(_dims.begin(), _dims.end(),
                     [](ShapeDim dim) { return dim <= 0; })) {
+//        using namespace backward;
+//        StackTrace st; st.load_here(32);
+//        Printer p; p.print(st);
         throw std::out_of_range(
             "Cannot calculate the size of a shape having dimensions "
             "of 0 size or undefined");
@@ -22,6 +26,7 @@ std::size_t avalanche::Shape::size() const {
 }
 
 Shape Shape::reshape(const std::vector<ShapeDim> &dims) const {
+    fmt::print("Attempting to reshape {} into {}", this->to_string(), Shape::dims_to_string(dims));
     std::size_t new_part_size = 1,
         undefined_dim_index = 0,
         i = 0;
@@ -124,7 +129,8 @@ void Shape::align_for_broadcasting(const Shape &shape1, const Shape &shape2,
              res = result_shape._dims.begin();
          s1 != shape1_aligned._dims.end();
          ++s1, ++s2, ++res) {
-        if (!(*s1 == 1 || *s2 == 1) && *s1 != *s2) {
+        if (!(*s1 == 1 || *s2 == 1) && *s1 != *s2 &&
+                *s1 != UnknownDim && *s2 != UnknownDim) {
             throw std::invalid_argument(
                 fmt::format("Cannot align shapes {} and {} for broadcasting",
                             shape1.to_string(), shape2.to_string()));

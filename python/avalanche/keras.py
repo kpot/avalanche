@@ -158,15 +158,17 @@ def placeholder(shape=None, ndim=None, dtype=None, sparse=False, name=None):
     ```
     """
     if shape is None:
-        raise ValueError('The shape must be fully specified')
+        if ndim is None:
+            raise ValueError('Either the shape of ndim must be provided')
+        else:
+            shape = [-1] * ndim
     if dtype is None:
         dtype = floatx()
     if sparse:
         raise NotImplementedError('Sparse tensors are not supported')
     if name is None:
         name = 'placeholder' + str(get_uid('placeholder'))
-    initializer = av.value_initializer(np.zeros(shape))
-    p = av.variable(name, shape, avalanche_dtype(dtype), initializer)
+    p = av.placeholder(name, shape, avalanche_dtype(dtype))
     p._uses_learning_phase = False
     p._keras_shape = shape
     p._is_placeholder = True
@@ -348,7 +350,7 @@ def int_shape(x):
     if hasattr(x, '_keras_shape'):
         return x._keras_shape
     elif hasattr(x, 'shape'):
-        return x.shape
+        return [(i if i >= 0 else None) for i in x.shape]
     else:
         return None
 
@@ -389,7 +391,7 @@ def constant(value, dtype=None, shape=None, name=None):
     """
     if dtype is None:
         dtype = floatx()
-    if isinstance(value, list):
+    if not is_tensor(value):
         value = np.array(value, dtype=dtype)
     if shape is not None:
         value = np.full(shape, value, dtype=dtype)
@@ -640,3 +642,181 @@ def square(x):
         A tensor.
     """
     return av.ops.square(x)
+
+
+def cast(x, dtype):
+    """Casts a tensor to a different dtype and returns it.
+
+    You can cast a Keras variable but it still returns a Keras tensor.
+
+    # Arguments
+        x: Keras tensor (or variable).
+        dtype: String, either (`'float16'`, `'float32'`, or `'float64'`).
+
+    # Returns
+        Keras tensor with dtype `dtype`.
+
+    # Example
+    ```python
+        >>> from keras import backend as K
+        >>> input = K.placeholder((2, 3), dtype='float32')
+        >>> input
+        <tf.Tensor 'Placeholder_2:0' shape=(2, 3) dtype=float32>
+        # It doesn't work in-place as below.
+        >>> K.cast(input, dtype='float16')
+        <tf.Tensor 'Cast_1:0' shape=(2, 3) dtype=float16>
+        >>> input
+        <tf.Tensor 'Placeholder_2:0' shape=(2, 3) dtype=float32>
+        # you need to assign it.
+        >>> input = K.cast(input, dtype='float16')
+        >>> input
+        <tf.Tensor 'Cast_2:0' shape=(2, 3) dtype=float16>
+    ```
+    """
+    return av.ops.cast(x, avalanche_dtype(dtype))
+
+
+def equal(x, y):
+    """Element-wise equality between two tensors.
+
+    # Arguments
+        x: Tensor or variable.
+        y: Tensor or variable.
+
+    # Returns
+        A bool tensor.
+    """
+    return av.ops.equal(x, y)
+
+
+def not_equal(x, y):
+    """Element-wise inequality between two tensors.
+
+    # Arguments
+        x: Tensor or variable.
+        y: Tensor or variable.
+
+    # Returns
+        A bool tensor.
+    """
+    return av.ops.not_equal(x, y)
+
+
+def greater(x, y):
+    """Element-wise truth value of (x > y).
+
+    # Arguments
+        x: Tensor or variable.
+        y: Tensor or variable.
+
+    # Returns
+        A bool tensor.
+    """
+    return av.ops.greater(x, y)
+
+
+def greater_equal(x, y):
+    """Element-wise truth value of (x >= y).
+
+    # Arguments
+        x: Tensor or variable.
+        y: Tensor or variable.
+
+    # Returns
+        A bool tensor.
+    """
+    return av.ops.greater_equal(x, y)
+
+
+def less(x, y):
+    """Element-wise truth value of (x < y).
+
+    # Arguments
+        x: Tensor or variable.
+        y: Tensor or variable.
+
+    # Returns
+        A bool tensor.
+    """
+    return av.ops.less(x, y)
+
+
+def less_equal(x, y):
+    """Element-wise truth value of (x <= y).
+
+    # Arguments
+        x: Tensor or variable.
+        y: Tensor or variable.
+
+    # Returns
+        A bool tensor.
+    """
+    return av.ops.less_equal(x, y)
+
+
+def gradients(loss, variables):
+    """Returns the gradients of `loss` w.r.t. `variables`.
+
+    # Arguments
+        loss: Scalar tensor to minimize.
+        variables: List of variables.
+
+    # Returns
+        A gradients tensor.
+    """
+    return av.gradients(loss, variables)
+
+
+def update_add(x, increment):
+    """Update the value of `x` by adding `increment`.
+
+    # Arguments
+        x: A `Variable`.
+        increment: A tensor of same shape as `x`.
+
+    # Returns
+        The variable `x` updated.
+    """
+    return av.ops.update_add(x, increment)
+
+
+def update_sub(x, decrement):
+    """Update the value of `x` by subtracting `decrement`.
+
+    # Arguments
+        x: A `Variable`.
+        decrement: A tensor of same shape as `x`.
+
+    # Returns
+        The variable `x` updated.
+    """
+    return av.ops.update_sub(x, decrement)
+
+
+def sqrt(x):
+    """Element-wise square root.
+
+    # Arguments
+        x: Tensor or variable.
+
+    # Returns
+        A tensor.
+    """
+    # zero = _to_tensor(0., x.dtype.base_dtype)
+    # inf = _to_tensor(np.inf, x.dtype.base_dtype)
+    # x = tf.clip_by_value(x, zero, inf)
+    return av.ops.sqrt(x)
+
+
+def pow(x, a):
+    """Element-wise exponentiation.
+
+    # Arguments
+        x: Tensor or variable.
+        a: Python integer.
+
+    # Returns
+        A tensor.
+    """
+    return av.ops.scale_pow(x, 1, a)
+

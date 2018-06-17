@@ -1,7 +1,8 @@
 #include <clblast.h>
 #include <iostream>
 
-#include <avalanche/logging.h>
+#include "fmt/format.h"
+
 #include "avalanche/math_ops/BroadcastedBinaryOp.h"
 #include "avalanche/opencl_utils.h"
 #include "avalanche/CodeCache.h"
@@ -9,9 +10,70 @@
 
 namespace avalanche {
 
-constexpr char elem_wise_broadcasted_source[] = {
-#include "avalanche/kernels/elem_wise_broadcasted.hex"
-};
+constexpr const std::size_t WORK_GROUP_SIZE = 64;
+
+
+std::string broadcasing_kernel_name(
+        const std::string &operation_name,
+        ArrayType source_dtype,
+        ArrayType output_dtype) {
+    return fmt::format(
+        "broadcasted_{operation_name}_{source_type}_{output_type}",
+        fmt::arg("operation_name", operation_name),
+        fmt::arg("source_type", cl_type_name_of_array(source_dtype)),
+        fmt::arg("output_type", cl_type_name_of_array(output_dtype)));
+}
+
+std::string generate_broadcasting_kernel(
+    const std::string &operation_name,
+    ArrayType source_dtype,
+    ArrayType output_dtype,
+    const std::string &operation_code,
+    int work_group_size) {
+    constexpr const char *kernel_template = R"clkernel(
+#pragma OPENCL EXTENSION cl_khr_fp64 : enable
+
+__kernel __attribute__((reqd_work_group_size({work_group_size}, 1, 1)))
+void {kernel_name}(
+         __global {source_type} *source1,
+         const ulong source1_offset,
+         __global {source_type} *source2,
+         const ulong source2_offset,
+         __global {output_type} *output,
+         __global ulong *size_mask1,
+         __global ulong *size_mask2,
+         __global ulong *result_sizes,
+         const ulong result_size,
+         const int rank) {{
+    ulong index_to_parse = get_global_id(0);
+    ulong source1_index = 0, source2_index = 0;
+    for (int j = 0; j < rank - 1; ++j) {{
+        ulong dim_coord = index_to_parse / result_sizes[j];
+        source1_index += dim_coord * size_mask1[j];
+        source2_index += dim_coord * size_mask2[j];
+        index_to_parse = index_to_parse % result_sizes[j];
+    }}
+    source1_index += size_mask1[rank - 1] * index_to_parse;
+    source2_index += size_mask2[rank - 1] * index_to_parse;
+    if (get_global_id(0) < result_size) {{
+        {source_type} a = source1[source1_offset + source1_index];
+        {source_type} b = source2[source2_offset + source2_index];
+        output[get_global_id(0)] = ({output_type})({operation_code});
+    }}
+}}
+    )clkernel";
+
+    return fmt::format(
+        kernel_template,
+        fmt::arg("kernel_name",
+                 broadcasing_kernel_name(operation_name,
+                                         source_dtype, output_dtype)),
+        fmt::arg("operation_code", operation_code),
+        fmt::arg("work_group_size", work_group_size),
+        fmt::arg("source_type", cl_type_name_of_array(source_dtype)),
+        fmt::arg("output_type", cl_type_name_of_array(output_dtype)));
+}
+
 
 std::size_t broadcast_size_masks(const Shape &shape1, const Shape &shape2,
                                  std::vector<cl_ulong> &size_mask1,
@@ -46,14 +108,28 @@ std::size_t broadcast_size_masks(const Shape &shape1, const Shape &shape2,
     return aligned_shapes[2].size();
 }
 
-BroadcastedBinaryOp::BroadcastedBinaryOp(
-        const avalanche::NodeRef &left,
-        const avalanche::NodeRef &right) {
+BroadcastedBinaryOp::BroadcastedBinaryOp(const NodeRef &left,
+                                         const NodeRef &right,
+                                         const std::string &operation_name,
+                                         const std::string &operation_cl_code,
+                                         ArrayType output_dtype)
+    :_result_dtype{output_dtype},
+     _operation_name{operation_name},
+     _kernel_name{broadcasing_kernel_name(
+         operation_name, left->dtype(), output_dtype)},
+     _kernel_source{generate_broadcasting_kernel(
+         operation_name, left->dtype(), output_dtype,
+         operation_cl_code, WORK_GROUP_SIZE)}
+{
     if (left->dtype() != right->dtype()) {
         throw std::invalid_argument(
-            "You cannot work with values of different types here");
+            fmt::format(
+                "You cannot perform broadcast operation on values of different "
+                "types: {}({}, {})",
+                operation_name,
+                array_type_name(left->dtype()),
+                array_type_name(right->dtype())));
     }
-    _result_dtype = left->dtype();
     // Here we calculate only a preliminary result shape for debugging
     // purposes. The real shape can be only evaluated in runtime (`forward`)
     Shape tmp_left_shape_aligned, tmp_right_shape_aligned;
@@ -104,40 +180,38 @@ MultiArrayRef avalanche::BroadcastedBinaryOp::forward(
 //    for (auto i: right_size_mask) { std::cout << i << ", "; } std::cout << std::endl;
 //    for (auto i: result_sub_sizes) { std::cout << i << ", "; } std::cout << std::endl;
     auto data_are_ready = make_event_list(
-        {left_mask_buffer->write_from_vector(left_size_mask),
-         right_mask_buffer->write_from_vector(right_size_mask),
-         result_sizes_buffer->write_from_vector(result_sub_sizes),
+        {left_mask_buffer->write_from_vector(left_size_mask, 0),
+         right_mask_buffer->write_from_vector(right_size_mask, 0),
+         result_sizes_buffer->write_from_vector(result_sub_sizes, 0),
          v1->buffer_unsafe()->completion_event(),
          v2->buffer_unsafe()->completion_event()});
 //    cl::WaitForEvents(data_are_ready);
 //    pool->cl_queue().flush();
     auto result = pool->make_array(result_shape, _result_dtype);
-    result->set_label(std::string(kernel_op_name()) + " at " + __func__, __LINE__);
+    result->set_label(_operation_name + " at " + __func__, __LINE__);
     // To keep the buffers alive until the computation is done we add them
     // as dependencies.
     result->add_dependencies(
         {left_mask_buffer, right_mask_buffer, result_sizes_buffer});
     result->add_dependencies({v1, v2});
     // The main job
-    const std::string source(
-        elem_wise_broadcasted_source,
-        sizeof(elem_wise_broadcasted_source));
     auto program = CodeCache::get_default().get_program(
         pool->cl_context(), queue,
-        "elem_wise_broadcasted", source, "");
+        _kernel_name, _kernel_source, "");
     using Buf = const cl::Buffer&;
-    cl::KernelFunctor<Buf, Buf, Buf, Buf, Buf, Buf, cl_ulong, cl_int>
-        kernel_functor(program, cached_kernel_name());
+    cl::KernelFunctor<Buf, cl_ulong, Buf, cl_ulong, Buf, Buf, Buf, Buf, cl_ulong, cl_int>
+        kernel_functor(program, _kernel_name);
     const auto result_size = result_shape.size();
-    const std::size_t work_group_size = 64;
-    const auto work_items = make_divisible_by(work_group_size, result_size);
+    const auto work_items = make_divisible_by(WORK_GROUP_SIZE, result_size);
     cl::Event result_event = kernel_functor(
         cl::EnqueueArgs(queue,
                         data_are_ready,
                         cl::NDRange(work_items),
-                        cl::NDRange(work_group_size)),
+                        cl::NDRange(WORK_GROUP_SIZE)),
         v1->cl_buffer_unsafe(),
+        static_cast<cl_ulong>(v1->buffer_offset()),
         v2->cl_buffer_unsafe(),
+        static_cast<cl_ulong>(v2->buffer_offset()),
         result->cl_buffer_unsafe(),
         left_mask_buffer->cl_buffer_unsafe(),
         right_mask_buffer->cl_buffer_unsafe(),

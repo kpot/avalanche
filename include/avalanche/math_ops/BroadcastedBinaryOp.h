@@ -25,25 +25,8 @@ std::size_t broadcast_size_masks(const Shape &shape1, const Shape &shape2,
                                  std::vector<cl_ulong> &result_sub_sizes);
 
 
-cl::Event call_broadcasted_kernel(
-    cl::CommandQueue queue,
-    const char *op_name,
-    ArrayType dtype,
-    const Shape &result_shape,
-    const cl::Buffer &left_value,
-    const cl::Buffer &right_value,
-    const cl::Buffer &result_buffer,
-    const cl::Buffer &left_mask_buffer,
-    const cl::Buffer &right_mask_buffer,
-    const cl::Buffer &result_sizes_buffer,
-    const std::vector<cl::Event> &wait_for_events);
-
-
-struct BroadcastedBinaryOp {
-    Shape _result_shape;
-    ArrayType _result_dtype;
-    mutable std::string _kernel_name;
-
+class BroadcastedBinaryOp {
+public:
     Shape shape() const {
         return _result_shape;
     }
@@ -52,23 +35,24 @@ struct BroadcastedBinaryOp {
         return _result_dtype;
     }
 
-    virtual const char* kernel_op_name() const = 0;
-
-    const std::string& cached_kernel_name() const {
-        if (_kernel_name.empty()) {
-            _kernel_name = (
-                std::string("broadcasted_") + kernel_op_name() + "_" +
-                array_type_name(_result_dtype));
-        }
-        return _kernel_name;
-    }
-
-    BroadcastedBinaryOp(const NodeRef &left, const NodeRef &right);
+    BroadcastedBinaryOp(const NodeRef &left,
+                        const NodeRef &right,
+                        const std::string &operation_name,
+                        const std::string &operation_cl_code,
+                        ArrayType output_dtype);
 
     MultiArrayRef forward(const MultiArrayRef &v1,
                           const MultiArrayRef &v2) const;
 
-    bool use_in_back_propagation() const { return true; };
+    virtual bool use_in_back_propagation() const { return true; };
+
+
+private:
+    Shape _result_shape;
+    ArrayType _result_dtype;
+    std::string _operation_name;
+    std::string _kernel_name;
+    std::string _kernel_source;
 };
 
 } // namespace

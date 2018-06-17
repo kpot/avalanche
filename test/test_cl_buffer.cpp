@@ -16,13 +16,13 @@ TEST_CASE("Filling/fetching CLBuffer using vectors") {
     }
     auto pool = CLMemoryManager::get_default()->buffer_pool(0);
     auto buffer = pool->reserve_buffer_for_vector(data);
-    auto &event = buffer->write_from_vector(data);
+    auto &event = buffer->write_from_vector(data, 0);
     REQUIRE(event.get() != nullptr);
 //    buffer->wait_until_ready();
     REQUIRE(buffer->byte_size() == sizeof(std::size_t) * data.size());
     std::vector<std::size_t> result;
     std::vector<cl::Event> wait_for_events({event});
-    buffer->read_into_vector(result, &wait_for_events);
+    buffer->read_into_vector(result, 0, &wait_for_events);
     REQUIRE(result.size() == data.size());
     buffer->wait_until_ready();
     for (std::size_t i = 0; i < result.size(); ++i) {

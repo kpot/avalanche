@@ -1,3 +1,5 @@
+#include <fmt/format.h>
+
 #include "avalanche/shape_nodes.h"
 #include "avalanche/base_ops_nodes.h"
 #include "avalanche/math_ops/simple_arithemic.h"
@@ -17,13 +19,13 @@ MultiArrayRef ShapeOf::forward(const MultiArrayRef &value) const {
         Shape({static_cast<ShapeDim>(value->shape().rank())}),
         dtype());
     array->add_dependencies({value});
-    array->buffer_unsafe()->write_from_vector(value->shape().dims());
+    array->buffer_unsafe()->write_from_vector(value->shape().dims(), 0);
     return array;
 }
 
 
 Reshape::Reshape(const NodeRef &input, const Shape &new_shape)
-    :_new_shape{input->shape().reshape(new_shape.dims())},
+    :_new_shape{new_shape},
      _result_dtype{input->dtype()}
 {
 }
@@ -59,7 +61,7 @@ MultiArrayRef ProductOfDims::forward(const MultiArrayRef &value) const {
     std::uint64_t casted_product = cast_to_value_of_array_type(
         _result_dtype, product);
     auto event = result->buffer_unsafe()->write_data(
-        &casted_product, array_type_size(_result_dtype));
+        &casted_product, array_type_size(_result_dtype), 0);
     // We have to wait to make sure the local buffers have been transferred
     // before the function ends
     result->wait_until_ready();

@@ -37,7 +37,7 @@ const NodeRef Log::partial_derivative(const NodeRef &input) const {
 class SigmoidDiff : public ConstTransform<0> {
 public:
     SigmoidDiff(const NodeRef &input) :ConstTransform<0>(
-        input,
+        input, input->dtype(),
         {{"s", Sigmoid::opencl_expression(input->dtype())}},
         "s * (1-s)", "diffsigmoid(", ")", {}) {}
 };
@@ -52,7 +52,7 @@ const NodeRef Sigmoid::partial_derivative(const NodeRef &input) const {
 class TanhDiff : public ConstTransform<0> {
 public:
     TanhDiff(const NodeRef &input) :ConstTransform<0>(
-        input,
+        input, input->dtype(),
         {{"s", Tanh::opencl_expression(input->dtype())}},
         "1 - s * s", "difftanh(", ")", {}) {}
 };
@@ -71,7 +71,7 @@ public:
     }
 
     ReLUDiff(const NodeRef &input) :ConstTransform<0>(
-        input,
+        input, input->dtype(),
         {},
         opencl_expression(input->dtype()), "diffrelu(", ")", {}) {}
 };
@@ -87,4 +87,15 @@ const NodeRef Exp::partial_derivative(const NodeRef &input) const {
 const NodeRef Square::partial_derivative(const NodeRef &input) const {
     return FU<Scale>(input, 2);
 }
+
+const NodeRef Cast::apply_chain_rule(const NodeRef &wrt_input,
+                                     const NodeRef &d_target_wrt_this,
+                                     const NodeRefList &all_inputs) const {
+    return FU<Cast>(d_target_wrt_this, wrt_input->dtype());
+}
+
+const NodeRef Sqrt::partial_derivative(const NodeRef &input) const {
+    return F<Recip>(FU<Scale>(F<Sqrt>(input), 2)); //  = 1 / (2 * sqrt(x))
+}
+
 } // namespace
