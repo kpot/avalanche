@@ -172,6 +172,8 @@ def placeholder(shape=None, ndim=None, dtype=None, sparse=False, name=None):
             raise ValueError('Either the shape of ndim must be provided')
         else:
             shape = [-1] * ndim
+    else:
+        shape = [(-1 if v is None else v) for v in shape]
     if dtype is None:
         dtype = floatx()
     if sparse:

@@ -306,8 +306,6 @@ const NodeRef Reduction::apply_chain_rule(const NodeRef &wrt_input,
                                           const NodeRefList &all_inputs) const {
 
     if (all_inputs[0] == wrt_input) {
-        // FIXME: Cleanup
-        std::cout << "Reduction: " << d_target_wrt_this->to_string() << std::endl;
         return F<Multiply>(
             FU<Reshape>(d_target_wrt_this, _result_shape_dims_kept),
             partial_derivative(wrt_input));
