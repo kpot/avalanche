@@ -1,12 +1,12 @@
 #include <iostream>
 
 #include "CL_cust/cl2.hpp"
+#include <fmt/format.h>
 
 #include "avalanche/CodeCache.h"
 #include "avalanche/terminal_nodes.h"
 #include "avalanche/math_ops/simple_arithemic.h"
 #include "avalanche/math_ops/messages.h"
-
 #include "avalanche/math_ops/const_transformation.h"
 
 namespace avalanche {
@@ -65,9 +65,8 @@ const NodeRef Tanh::partial_derivative(const NodeRef &input) const {
 class ReLUDiff : public ConstTransform<0> {
 public:
     static std::string opencl_expression(ArrayType dtype) {
-        const char *type_name = avalanche::cl_type_name_of_array(dtype);
-        return (std::string("select((") + type_name + ")0.0," +
-                " 1.0, isgreater(v, 0))");
+        const char *type_name = cl_type_name_of_array(dtype);
+        return fmt::format("select(({0})0.0, ({0})1.0, isgreater(({0})v, 0))", type_name);
     }
 
     ReLUDiff(const NodeRef &input) :ConstTransform<0>(
