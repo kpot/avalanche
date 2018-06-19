@@ -176,7 +176,12 @@ std::string Shape::dims_to_string(const std::vector<ShapeDim> &dims) {
     std::ostringstream result;
     result << "{";
     for (std::size_t i = 0; i < dims.size(); ++i) {
-        result << dims[i] << (i == dims.size() - 1 ? "" : ", ");
+        if (dims[i] == UnknownDim) {
+            result << "?";
+        } else {
+            result << dims[i];
+        }
+        result << (i == dims.size() - 1 ? "" : ", ");
     }
     result << "}";
     return result.str();
@@ -187,9 +192,13 @@ bool Shape::is_complete() const {
 }
 
 bool Shape::agrees_with(const Shape &needed) const {
-    if (rank() != needed.rank()) return false;
+    return agrees_with(needed.dims());
+}
+
+bool Shape::agrees_with(const std::vector<ShapeDim> &needed) const {
+    if (rank() != needed.size()) return false;
     for (std::size_t i = 0; i < _dims.size(); ++i) {
-        if (_dims[i] != needed._dims[i] && needed._dims[i] != UnknownDim) {
+        if (_dims[i] != needed[i] && needed[i] != UnknownDim) {
             return false;
         }
     }
@@ -230,6 +239,52 @@ Shape::dims_difference(const Shape &aligned_shape, const Shape &result_shape) {
         if (aligned_shape.dims()[i] != result_shape.dims()[i]) {
             result.push_back(i);
         }
+    }
+    return result;
+}
+
+void Shape::normalize_range(const ShapeDim axis, const Range &range,
+                            ShapeDim &real_axis, Range &real_range) const {
+    real_axis = static_cast<ShapeDim>(dim_real_index(axis));
+    if (real_axis >= rank()) {
+        throw std::invalid_argument(
+            fmt::format(
+                "Cannot slice along given axis {} because it "
+                "exceeds the shape ({})",
+                real_axis, to_string()));
+    }
+    auto axis_size = _dims[real_axis];
+    if (axis_size == UnknownDim) {
+        real_range = range;
+    } else {
+        ShapeDim range_start = (range.start < 0) ? axis_size + range.start
+                                                 : range.start;
+        ShapeDim range_end = (range.end < 0) ? axis_size + range.end
+                                             : range.end;
+        if (range_start > range_end) {
+            throw std::invalid_argument(
+                fmt::format(
+                    "Range start index {} ({}) cannot be large than "
+                    "the end index {} ({})",
+                    range.start, range_start, range.end, range_end));
+        }
+        if (range_start < 0 || range_end < 0 ||
+            range_start >= axis_size || range_end >= axis_size) {
+            throw std::invalid_argument(
+                fmt::format(
+                    "Range {}:{} is out of the boundaries "
+                    "of axis {} (the size of {})",
+                    range_start, range_end, real_axis, axis_size));
+        }
+        real_range = {range_start, range_end};
+    }
+}
+
+ShapeDim Shape::dims_product(const std::vector<ShapeDim> dims,
+                             ShapeDim start, ShapeDim end) {
+    ShapeDim result = 1;
+    for (ShapeDim i = start; i <= end; ++i) {
+        result *= dims[i];
     }
     return result;
 }

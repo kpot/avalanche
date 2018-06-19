@@ -182,9 +182,13 @@ def placeholder(shape=None, ndim=None, dtype=None, sparse=False, name=None):
         name = 'placeholder' + str(get_uid('placeholder'))
     p = av.placeholder(name, shape, avalanche_dtype(dtype))
     p._uses_learning_phase = False
-    p._keras_shape = shape
+    p._keras_shape = avalanche_shape_to_keras(shape)
     p._is_placeholder = True
     return p
+
+
+def avalanche_shape_to_keras(avalanche_shape):
+    return tuple([(None if v == -1 else v) for v in avalanche_shape])
 
 
 def function(inputs, outputs, updates=None, **kwargs):
@@ -878,6 +882,33 @@ def zeros(shape, dtype=None, name=None):
     return variable(zeros_const, dtype=dtype, name=name)
 
 
+def zeros_like(x, dtype=None, name=None):
+    """Instantiates an all-zeros variable of the same shape as another tensor.
+
+    # Arguments
+        x: Keras variable or Keras tensor.
+        dtype: String, dtype of returned Keras variable.
+             None uses the dtype of x.
+        name: String, name for the variable to create.
+
+    # Returns
+        A Keras variable with the shape of x filled with zeros.
+
+    # Example
+    ```python
+        >>> from keras import backend as K
+        >>> kvar = K.variable(np.random.random((2,3)))
+        >>> kvar_zeros = K.zeros_like(kvar)
+        >>> K.eval(kvar_zeros)
+        array([[ 0.,  0.,  0.],
+               [ 0.,  0.,  0.]], dtype=float32)
+    ```
+    """
+    if dtype is None:
+        dtype = floatx()
+    return av.consts.zeros_like_with_type(x, avalanche_dtype(dtype))
+
+
 def ones(shape, dtype=None, name=None):
     """Instantiates an all-ones variable and returns it.
 
@@ -906,3 +937,33 @@ def ones(shape, dtype=None, name=None):
     ones_const = av.consts.ones(av.Shape(shape), avalanche_dtype(dtype))
     return variable(ones_const, dtype=dtype, name=name)
 
+
+def binary_crossentropy(target, output, from_logits=False):
+    """Binary crossentropy between an output tensor and a target tensor.
+
+    # Arguments
+        target: A tensor with the same shape as `output`.
+        output: A tensor.
+        from_logits: Whether `output` is expected to be a logits tensor.
+            By default, we consider that `output`
+            encodes a probability distribution.
+
+    # Returns
+        A tensor.
+    """
+    if from_logits:
+        output = sigmoid(output)
+    return av.ops.binary_crossentropy(output, target)
+
+
+def concatenate(tensors, axis=-1):
+    """Concatenates a list of tensors alongside the specified axis.
+
+    # Arguments
+        tensors: list of tensors to concatenate.
+        axis: concatenation axis.
+
+    # Returns
+        A tensor.
+    """
+    return av.ops.concatenate(tensors, axis)

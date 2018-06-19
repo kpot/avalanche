@@ -129,4 +129,25 @@ const NodeRef Power::apply_chain_rule(const NodeRef &wrt_input,
     }
     return derivative;
 }
+
+const NodeRef ElemWisePlus::apply_chain_rule(const NodeRef &wrt_input,
+                                             const NodeRef &d_target_wrt_this,
+                                             const NodeRefList &all_inputs) const {
+
+    return d_target_wrt_this;
+}
+
+const NodeRef ElemWiseMultiply::apply_chain_rule(const NodeRef &wrt_input,
+                                                 const NodeRef &d_target_wrt_this,
+                                                 const NodeRefList &all_inputs) const {
+    if (all_inputs[0] == wrt_input) {
+        // with respect to left operand
+        return F<ElemWiseMultiply>(d_target_wrt_this, all_inputs[1]);
+    } else if (all_inputs[1] == wrt_input) {
+        // with respect to right_operand
+        return F<ElemWiseMultiply>(d_target_wrt_this, all_inputs[0]);
+    } else {
+        throw std::logic_error(messages::CANT_DIFF_UNEXISTING_INPUT_MESSAGE);
+    }
+}
 } // namespace

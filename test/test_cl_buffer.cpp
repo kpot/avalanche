@@ -22,7 +22,8 @@ TEST_CASE("Filling/fetching CLBuffer using vectors") {
     REQUIRE(buffer->byte_size() == sizeof(std::size_t) * data.size());
     std::vector<std::size_t> result;
     std::vector<cl::Event> wait_for_events({event});
-    auto reading_is_done = buffer->read_into_vector(result, 0, &wait_for_events);
+    auto reading_is_done = buffer->read_into_vector(result, 0, data_length,
+                                                    &wait_for_events);
     reading_is_done.wait();
     REQUIRE(result.size() == data.size());
     for (std::size_t i = 0; i < result.size(); ++i) {

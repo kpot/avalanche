@@ -13,7 +13,7 @@
 #include "avalanche/Shape.h"
 #include "avalanche/casting.h"
 #include "avalanche/macroses.h"
-#include "messages.h"
+#include "avalanche/math_ops/messages.h"
 
 namespace avalanche {
 
@@ -111,7 +111,7 @@ public:
                                    const NodeRef &d_target_wrt_this,
                                    const NodeRefList &all_inputs) const {
         if (all_inputs[0] == wrt_input) { // d(x^a) / dx == a * x ^ (a - 1)
-            return F<Multiply>(
+            return F<ElemWiseMultiply>(
                 d_target_wrt_this,
                 partial_derivative(wrt_input));
         } else {
@@ -209,7 +209,7 @@ public:
             {scale, power}) {
     }
 
-    std::string opencl_expression(ArrayType dtype) const  {
+    static std::string opencl_expression(ArrayType dtype)  {
         return "p0 * pow(v, p1)";
     }
 
@@ -228,7 +228,7 @@ public:
         {}) {
     }
 
-    std::string opencl_expression(ArrayType dtype) const  {
+    static std::string opencl_expression(ArrayType dtype)  {
         return "v * v";
     }
 
@@ -243,7 +243,7 @@ public:
                             opencl_expression(input->dtype()),
                             "recip(", ")", {}) {}
 
-    std::string opencl_expression(ArrayType dtype) const {
+    static std::string opencl_expression(ArrayType dtype) {
         switch (dtype) {
             case ArrayType::float32:
                 return "native_recip(v)";
@@ -266,7 +266,7 @@ public:
                             std::to_string(value) + " * ", "", {value})
     {}
 
-    std::string opencl_expression(ArrayType dtype) const {
+    static std::string opencl_expression(ArrayType dtype) {
         return "p0 * v";
     }
 
@@ -288,7 +288,7 @@ public:
     {
     }
 
-    std::string opencl_expression(ArrayType dtype) const {
+    static std::string opencl_expression(ArrayType dtype) {
         return "v";
     }
 
@@ -311,7 +311,7 @@ public:
                             opencl_expression(input->dtype()),
                             "log(", ")", {}) {}
 
-    std::string opencl_expression(ArrayType dtype) const {
+    static std::string opencl_expression(ArrayType dtype) {
         switch (dtype) {
             case ArrayType::float32:
                 return "native_log(v)";
@@ -332,7 +332,7 @@ public:
                             opencl_expression(input->dtype()),
                             "sqrt(", ")", {}) {}
 
-    std::string opencl_expression(ArrayType dtype) const {
+    static std::string opencl_expression(ArrayType dtype) {
         switch (dtype) {
             case ArrayType::float32:
                 return "native_sqrt(v)";

@@ -16,7 +16,7 @@ namespace avalanche {
 class MultiArray;
 
 using MultiArrayRef = std::shared_ptr<MultiArray>;
-using ArrayRefList = std::vector<MultiArrayRef >;
+using ArrayRefList = std::vector<MultiArrayRef>;
 
 
 /**
@@ -76,7 +76,7 @@ public:
      * OpenCL buffer for adjacent operations.
      */
     void add_dependencies(std::initializer_list<CLBufferRef> dependencies);
-    void add_dependencies(std::initializer_list<MultiArrayRef> dependencies);
+    void add_dependencies(const std::vector<MultiArrayRef> &dependencies);
     void set_label(const std::string &label) { _buffer->set_label(label); }
     void set_label(const char *func, int line) { _buffer->set_label(func, line); }
     void set_label(const std::string &func, int line) { _buffer->set_label(func, line); }
@@ -90,7 +90,7 @@ public:
                 "with the type of the array.");
         }
         auto reading_is_done = buffer_when_ready()->read_into_vector(
-            data, _buffer_offset);
+            data, _buffer_offset, size(), nullptr);
         reading_is_done.wait();
     }
 

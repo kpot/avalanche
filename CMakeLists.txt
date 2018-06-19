@@ -71,6 +71,8 @@ add_library(avalanche
         src/avalanche/math_ops/reductions.cpp
         src/avalanche/math_ops/comparisons.cpp
         src/avalanche/math_ops/updates.cpp
+        src/avalanche/math_ops/ElemWiseBinaryOp.cpp
+        src/avalanche/math_ops/losses.cpp
         ${BACKWARD_ENABLE})
 target_compile_features(avalanche PRIVATE cxx_std_14)
 target_link_libraries(avalanche

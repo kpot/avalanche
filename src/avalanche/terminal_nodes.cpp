@@ -5,10 +5,11 @@
 
 #include "avalanche/base_ops_nodes.h"
 #include "avalanche/MultiArray.h"
-#include "avalanche/terminal_nodes.h"
 #include "avalanche/macroses.h"
 #include "avalanche/casting.h"
 #include "avalanche/logging.h"
+
+#include "avalanche/terminal_nodes.h"
 
 namespace avalanche {
 
@@ -154,24 +155,35 @@ const NodeRef Constant::fill_shape(const avalanche::NodeRef &shape_node,
 }
 
 const NodeRef Constant::fill_like(const NodeRef &other_node, float value) {
+    return fill_like_with_type(other_node, other_node->dtype(), value);
+}
+
+const NodeRef
+Constant::fill_like_with_type(const NodeRef &other_node, ArrayType dtype,
+                              float value) {
     Initializer initializer {
-        [value, other_node](Context &context, ExecutionCache &cache) {
+        [value, other_node, dtype](Context &context, ExecutionCache &cache) {
             auto real_value = other_node->eval(context, cache);
             auto result = context.device_pool()->make_array(
-                real_value->shape(), real_value->dtype());
+                real_value->shape(), dtype);
             auto queue = result->buffer_unsafe()->pool()->cl_queue();
-            fill_array_switch(real_value->dtype(), queue, result, value);
+            fill_array_switch(dtype, queue, result, value);
             return result;
         },
-        other_node->dtype()
+        dtype,
     };
     return std::static_pointer_cast<BaseNode>(
         std::make_shared<Constant>(
             fmt::format("Fill shape like {} with {}",
                         other_node->repr(), value),
             initializer, other_node->shape(),
-            other_node->dtype(),
+            dtype,
             NodeRefList({F<NoBackProp>(other_node)})));
+}
+
+const NodeRef
+Constant::zeros_like_with_type(const NodeRef &other_node, ArrayType dtype) {
+    return fill_like_with_type(other_node, dtype, 0);
 }
 
 MultiArrayRef Variable::eval(Context &context, ExecutionCache &cache) const {

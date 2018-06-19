@@ -212,10 +212,13 @@ public:
         return fill_like(other_node, 0);
     }
 
+    static const NodeRef zeros_like_with_type(const NodeRef &other_node, ArrayType dtype);
+
     static const NodeRef fill_shape(const NodeRef &shape_node, ArrayType dtype,
                                     float value);
 
     static const NodeRef fill_like(const NodeRef &other_node, float value);
+    static const NodeRef fill_like_with_type(const NodeRef &other_node, ArrayType dtype, float value);
 
 private:
     Initializer _initializer;

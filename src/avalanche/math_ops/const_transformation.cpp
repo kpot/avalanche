@@ -7,6 +7,7 @@
 #include "avalanche/terminal_nodes.h"
 #include "avalanche/math_ops/simple_arithemic.h"
 #include "avalanche/math_ops/messages.h"
+
 #include "avalanche/math_ops/const_transformation.h"
 
 namespace avalanche {

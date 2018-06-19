@@ -41,8 +41,9 @@ void MultiArray::add_dependencies(
     _buffer->add_dependencies(dependencies);
 }
 
-void MultiArray::add_dependencies(
-    std::initializer_list<MultiArrayRef> dependencies) {
+void
+MultiArray::add_dependencies(const std::vector<MultiArrayRef> &dependencies) {
+
     std::vector<CLBufferRef> buffers;
     for (auto const &dep: dependencies) {
         buffers.push_back(dep->_buffer);

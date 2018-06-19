@@ -1,6 +1,12 @@
 #ifndef AVALANCHE_SHAPENODE_H
 #define AVALANCHE_SHAPENODE_H
 
+/**
+ * This module contains anything transforming the shape or purpose of the data
+ * without changing the content. This includes reshaping, fetching the shape
+ * as a tensor,  concatenation of several nodes, etc.
+ */
+
 #include "avalanche/BaseNode.h"
 #include "avalanche/Shape.h"
 
@@ -133,6 +139,95 @@ private:
     const Shape _result_shape;
     const ArrayType _result_dtype;
     std::vector<ShapeDim> _dims;
+};
+
+
+class SliceAxis {
+public:
+    SliceAxis(const NodeRef &input, ShapeDim axis,
+              ShapeDim range_start, ShapeDim range_end);
+
+    const Shape& shape() const { return _result_shape; }
+    ArrayType dtype() const { return _result_dtype; }
+
+    MultiArrayRef forward(const MultiArrayRef &value) const;
+    std::string lh_name() const { return "SliceAxis("; }
+    std::string rh_name() const;
+
+    const NodeRef apply_chain_rule(
+        const NodeRef &wrt_input,
+        const NodeRef &d_target_wrt_this,
+        const NodeRefList &all_inputs) const;;
+
+    bool use_in_back_propagation() const { return true; }
+
+private:
+    Shape _result_shape;
+    ArrayType _result_dtype;
+    ShapeDim _axis;
+    Range _range;
+};
+
+/**
+ * Copies the first node in the midst of a copy of a second node
+ * (which must have the same size or larger) along some axis,
+ * overwriting previous values.
+ * Useful for back-propagation through slicing.
+ */
+class ProjectOnto {
+public:
+    ProjectOnto(const NodeRef &input, const NodeRef &to_node,
+                ShapeDim axis, ShapeDim dest_range_start);
+
+    const Shape& shape() const { return _result_shape; }
+    ArrayType dtype() const { return _result_dtype; }
+
+    MultiArrayRef forward(const MultiArrayRef &left,
+                          const MultiArrayRef &right) const;
+    std::string name() const;
+
+    const NodeRef apply_chain_rule(
+        const NodeRef &wrt_input,
+        const NodeRef &d_target_wrt_this,
+        const NodeRefList &all_inputs) const;;
+
+    bool use_in_back_propagation() const { return true; }
+
+private:
+    Shape _result_shape;
+    ArrayType _result_dtype;
+    ShapeDim _axis;
+    ShapeDim _dest_range_start;
+};
+
+/** Concatenates multiple nodes along a given axis */
+class Concatenate : public BaseNode {
+public:
+
+    MultiArrayRef eval(Context &context, ExecutionCache &cache) const override;;
+
+    const NodeRef apply_chain_rule(
+            const NodeRef &wrt_input,
+            const NodeRef &d_target_wrt_this,
+            const NodeRefList &all_inputs) const override;;
+
+    std::string to_string() const override;
+    std::string repr() const override;
+
+    NodeRefList inputs() const override { return _all_nodes; };
+
+    MultiArrayRef forward(BufferPoolRef &pool,
+                          const ArrayRefList &evaluated_inputs) const;
+
+    static NodeRef make(const NodeRefList &nodes, ShapeDim axis = -1) {
+        return std::static_pointer_cast<BaseNode>(
+            std::shared_ptr<Concatenate>(new Concatenate(nodes, axis)));
+    }
+private:
+    const NodeRefList _all_nodes;
+    ShapeDim _axis;
+
+    explicit Concatenate(const NodeRefList &nodes, ShapeDim axis = -1);
 };
 
 } // namespace

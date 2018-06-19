@@ -46,7 +46,7 @@ public:
             sizeof(typename Vector::value_type) * destination_offset);
     }
 
-    const cl::Event& write_data(const void *data, std::size_t num_bytes,
+    const cl::Event& write_data(const void *data, std::size_t bytes_to_write,
                                 std::size_t dest_offset_in_bytes);
 
     /**
@@ -54,7 +54,7 @@ public:
      */
     cl::Event read_data(
         void *buffer,
-        std::size_t buffer_size,
+        std::size_t bytes_to_read,
         std::size_t source_offset_in_bytes,
         const std::vector<cl::Event> *wait_for_events = nullptr) const;
 
@@ -78,17 +78,10 @@ public:
      * @return A new event, indicating when the copying is done.
      */
     template <typename Vector>
-    cl::Event read_into_vector(
-            Vector &v,
-            std::size_t source_offset,
-            const std::vector<cl::Event>* wait_for_events=nullptr) const {
-        std::size_t items_to_fill = _size / sizeof(typename Vector::value_type);
-        v.resize(items_to_fill);
-        const auto bytes_to_read = sizeof(typename Vector::value_type) * items_to_fill;
-        // FIXME: Cleanup
-        // std::size_t real_buffer_size = _cl_buffer.getInfo<CL_MEM_SIZE>();
-        // cl_uint reference_count = _cl_buffer.getInfo<CL_MEM_REFERENCE_COUNT>();
-        // cl_uint queue_refcount = pool_queue().getInfo<CL_QUEUE_REFERENCE_COUNT>();
+    cl::Event read_into_vector(Vector &v, std::size_t source_offset, std::size_t num_elements,
+                                   const std::vector<cl::Event> *wait_for_events) const {
+        const auto bytes_to_read = sizeof(typename Vector::value_type) * num_elements;
+        v.resize(num_elements);
         return read_data(v.data(), bytes_to_read,
                          source_offset * sizeof(typename Vector::value_type),
                          wait_for_events);

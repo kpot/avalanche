@@ -11,6 +11,8 @@
 #include "avalanche/math_ops/const_transformation.h"
 #include "avalanche/math_ops/reductions.h"
 #include "avalanche/math_ops/updates.h"
+#include "avalanche/math_ops/ElemWiseBinaryOp.h"
+#include "avalanche/math_ops/losses.h"
 #include "avalanche/random_nodes.h"
 
 #endif //AVALANCHE_MATH_OPS_H

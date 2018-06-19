@@ -3,6 +3,7 @@
 
 #include "avalanche/base_ops_nodes.h"
 #include "avalanche/math_ops/BroadcastedBinaryOp.h"
+#include "avalanche/math_ops/ElemWiseBinaryOp.h"
 
 namespace avalanche {
 
@@ -22,6 +23,21 @@ public:
         const NodeRefList &all_inputs) const;
 };
 
+class ElemWisePlus : public ElemWiseBinaryOp {
+public:
+    ElemWisePlus(const NodeRef &left, const NodeRef &right)
+        : ElemWiseBinaryOp(
+        left, right, "elem_wise_plus",
+        "a + b",
+        choose_common_array_type(left->dtype(), right->dtype())) {}
+
+    std::string name() const { return "+"; }
+
+    const NodeRef apply_chain_rule(
+        const NodeRef &wrt_input,
+        const NodeRef &d_target_wrt_this,
+        const NodeRefList &all_inputs) const;
+};
 
 class Minus : public BroadcastedBinaryOp {
 public:
@@ -48,6 +64,23 @@ public:
             "a * b", choose_common_array_type(left->dtype(), right->dtype())) {}
 
     std::string name() const { return "*"; }
+
+    const NodeRef apply_chain_rule(
+        const NodeRef &wrt_input,
+        const NodeRef &d_target_wrt_this,
+        const NodeRefList &all_inputs) const;
+};
+
+
+class ElemWiseMultiply : public ElemWiseBinaryOp {
+public:
+    ElemWiseMultiply(const NodeRef &left, const NodeRef &right)
+        : ElemWiseBinaryOp(
+        left, right, "elem_wise_multiply",
+        "a * b",
+        choose_common_array_type(left->dtype(), right->dtype())) {}
+
+    std::string name() const { return "+"; }
 
     const NodeRef apply_chain_rule(
         const NodeRef &wrt_input,

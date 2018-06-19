@@ -1,6 +1,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/numpy.h>
+#include <Python.h>
 
 #include "avalanche/terminal_nodes.h"
 #include "avalanche/nodes.h"
@@ -95,7 +96,7 @@ public:
 
 
 template<typename Op>
-NodeRef SimpleBinaryOp(const NodeRef &a, const NodeRef &b) {
+NodeRef StraightBinaryOp(const NodeRef &a, const NodeRef &b) {
     return std::static_pointer_cast<BaseNode>(
         std::make_shared<BinaryOp<Op>>(a, b));
 }
@@ -287,6 +288,24 @@ NodeRef cast(const NodeRef &value, ArrayType dtype) {
 }
 
 
+NodeRef py_slice_node(const NodeRef &node, py::handle x, ShapeDim current_axis) {
+    Py_ssize_t start, stop, step;
+    PySlice_Unpack(x.ptr(), &start, &stop, &step);
+    if (step != 1) {
+        throw std::invalid_argument(
+            "Slicing is currently supported only "
+            "for ranges with step equal 1");
+    }
+    if (stop != PY_SSIZE_T_MAX || start != 0) {
+        ShapeDim range_start = static_cast<ShapeDim>(start);
+        ShapeDim range_stop = static_cast<ShapeDim>(
+            stop == PY_SSIZE_T_MAX ? -1 : stop);
+        return FU<SliceAxis>(node, current_axis, range_start, range_stop);
+    }
+    return node;
+}
+
+
 PYBIND11_MODULE(pyvalanche, m) {
     m.doc() = R"pbdoc(
         Avalanche ML framework
@@ -351,6 +370,23 @@ PYBIND11_MODULE(pyvalanche, m) {
         .def("__rsub__", [](const NodeRef &node, float value) -> NodeRef {
             return F<Minus>(Constant::scalar(value), node);
         })
+        .def("__getitem__", [](const NodeRef &node, py::slice single_slice) {
+            return py_slice_node(node, single_slice, 0);
+        })
+        .def("__getitem__", [](const NodeRef &node, py::tuple many_slices) {
+            ShapeDim current_axis = 0;
+            NodeRef output = node;
+            for (auto x: many_slices) {
+                if (PySlice_Check(x.ptr())) {
+                    output = py_slice_node(output, x, current_axis);
+                } else if (x.ptr() != Py_Ellipsis) {
+                    throw std::invalid_argument(
+                        "Slicing is currently supported only for ranges");
+                }
+                current_axis += 1;
+            }
+            return output;
+        });
         ;
     py::implicitly_convertible<float, BaseNode>();
     py::implicitly_convertible<long, BaseNode>();
@@ -408,6 +444,7 @@ PYBIND11_MODULE(pyvalanche, m) {
 
     m.def_submodule("consts", "Available constants")
         .def("zeros", &Constant::zeros)
+        .def("zeros_like_with_type", &Constant::zeros_like_with_type)
         .def("ones", &Constant::ones)
         .def("from_array", &make_constant_from_numpy, "Creates a new constant");
 
@@ -432,36 +469,38 @@ PYBIND11_MODULE(pyvalanche, m) {
         .def("scale_pow", [](const NodeRef &input, float scale, float power) {
             return FU<SPower>(input, scale, power);
         })
-        .def("pow", &SimpleBinaryOp<Power>)
-        .def("plus", &SimpleBinaryOp<Plus>,
+        .def("pow", &StraightBinaryOp<Power>)
+        .def("plus", &StraightBinaryOp<Plus>,
              "Elem-wise addition with broadcasting")
-        .def("minus", &SimpleBinaryOp<Minus>,
+        .def("minus", &StraightBinaryOp<Minus>,
              "Elem-wise subtraction with broadcasting")
-        .def("divide", &SimpleBinaryOp<Divide>,
+        .def("divide", &StraightBinaryOp<Divide>,
              "Elem-wise division with broadcasting")
-        .def("multiply", &SimpleBinaryOp<Multiply>,
+        .def("multiply", &StraightBinaryOp<Multiply>,
              "Elem-wise multiplication with broadcasting")
-        .def("equal", &SimpleBinaryOp<Equal>,
+        .def("equal", &StraightBinaryOp<Equal>,
              "Elem-wise equality check with broadcasting")
-        .def("not_equal", &SimpleBinaryOp<NotEqual>,
+        .def("not_equal", &StraightBinaryOp<NotEqual>,
              "Elem-wise inequality check with broadcasting")
-        .def("less", &SimpleBinaryOp<Less>,
+        .def("less", &StraightBinaryOp<Less>,
              "Elem-wise truth value of (x < y) with broadcasting")
-        .def("less_equal", &SimpleBinaryOp<LessEqual>,
+        .def("less_equal", &StraightBinaryOp<LessEqual>,
              "Elem-wise truth value of (x <= y) with broadcasting")
-        .def("greater", &SimpleBinaryOp<Greater>,
+        .def("greater", &StraightBinaryOp<Greater>,
              "Elem-wise truth value of (x > y) with broadcasting")
-        .def("greater_equal", &SimpleBinaryOp<GreaterEqual>,
+        .def("greater_equal", &StraightBinaryOp<GreaterEqual>,
              "Elem-wise truth value of (x >= y) with broadcasting")
-        .def("less", &SimpleBinaryOp<Less>,
+        .def("less", &StraightBinaryOp<Less>,
              "Elem-wise truth value of (x < y) with broadcasting")
-        .def("less_equal", &SimpleBinaryOp<LessEqual>,
+        .def("less_equal", &StraightBinaryOp<LessEqual>,
              "Elem-wise truth value of (x <= y) with broadcasting")
-        .def("update", &SimpleBinaryOp<Update>,
+        .def("update", &StraightBinaryOp<Update>,
              "In-place update (assignment) of a variable")
-        .def("update_add", &SimpleBinaryOp<UpdateAdd>,
+        .def("update_add", &StraightBinaryOp<UpdateAdd>,
              "In-place addition like +=")
-        .def("update_sub", &SimpleBinaryOp<UpdateSub>,
+        .def("update_sub", &StraightBinaryOp<UpdateSub>,
+             "In-place subtraction like -=")
+        .def("binary_crossentropy", &StraightBinaryOp<BinaryCrossEntropy>,
              "In-place subtraction like -=")
         .def("matmul", &matmul,
              py::arg_v("a", "Left matrix"),
@@ -476,6 +515,7 @@ PYBIND11_MODULE(pyvalanche, m) {
              py::arg_v("node", "Input tensor"),
              py::arg_v("axis", -1, "Dimension to perform on"))
         .def("reshape", &FU<Reshape, const Shape&>)
+        .def("concatenate", &Concatenate::make)
         .def("reduce_sum", &FU<ReduceSum, std::vector<ShapeDim>, bool>, REDUCE_ARGS)
         .def("reduce_mean", &FU<ReduceMean, std::vector<ShapeDim>, bool>, REDUCE_ARGS);
 //    .def("plus", [](const NodeRef &left, const NodeRef &right) -> NodeRef { return std::static_pointer_cast<BaseNode>(std::make_shared<Plus>(left, right)); });

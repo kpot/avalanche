@@ -74,11 +74,9 @@ const NodeRef back_propagate_node(
     if (chunks.empty()) {
         result = Constant::zeros_like(variable);
     } else {
-//        result = std::accumulate(
-//            std::next(chunks.begin()), chunks.end(), chunks[0]);
         result = chunks[0];
         for (std::size_t i = 1; i < chunks.size(); ++i) {
-            result = result + chunks[i];
+            result = F<ElemWisePlus>(result, chunks[i]);
         }
     }
     grad_table.insert({variable, result});

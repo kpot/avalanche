@@ -7,13 +7,9 @@
 
 #include "avalanche/testing_tools.h"
 
-
-
-
-
+using namespace avalanche;
 
 TEST_CASE("Broadcasting element-wise ops") {
-    using namespace avalanche;
 
     SECTION("Multiplying two scalars") {
         test_broadcasted_elemwise_op<float, Multiply, float>(
@@ -88,7 +84,6 @@ TEST_CASE("Broadcasting element-wise ops") {
 
 
 TEST_CASE("Testing matrix multiplication") {
-    using namespace avalanche;
     auto val1 = Constant::tensor<float>(
         {0.0f, 1.0f, 2.0f,
          3.0f, 4.0f, 5.0f,
@@ -151,7 +146,6 @@ TEST_CASE("Testing matrix multiplication") {
 
 
 TEST_CASE("Testing scaling") {
-    using namespace avalanche;
     auto val1 = Constant::tensor<float>(
         {0.0f, 1.0f, 2.0f,
          3.0f, 4.0f, 5.0f,
@@ -167,7 +161,6 @@ TEST_CASE("Testing scaling") {
 
 
 TEST_CASE("Test various transformations") {
-    using namespace avalanche;
 
     SECTION("Raising to a power") {
         auto val1 = Constant::tensor<float>(
@@ -359,7 +352,6 @@ TEST_CASE("Test various transformations") {
 
 
 TEST_CASE("Checking automatic derivations (backprop)") {
-    using namespace avalanche;
 
     SECTION("Sigmoid") {
         auto input = Variable::make("input1", {3}, ArrayType::float32);
@@ -407,6 +399,56 @@ TEST_CASE("Checking automatic derivations (backprop)") {
         evaluate_and_check<float>(
             output,
             {0.5, 3.0, 5.5, 1.5, 4.0, 6.5, 2.5, 5.0, 7.5},
+            Shape({3, 3}),
+            context);
+        verify_derivatives<float>(context, {weights, biases}, output, 1e-2);
+    }
+
+    SECTION("Elemwise plus") {
+        auto weights = Variable::make("weights", {3, 3} , ArrayType::float32);
+        auto biases = Variable::make("biases", {3, 3}, ArrayType::float32);
+        auto output = F<ElemWisePlus>(weights, biases);
+        auto context = Context::make_for_device(0);
+        context->init<float>(
+            weights,
+            {0.0f, 3.0f, 6.0,
+             1.0, 4.0, 7.0,
+             2.0, 5.0, 8.0},
+            weights->shape());
+        context->init<float>(
+            biases,
+            {0.5, 0.0, -0.5,
+             0.5, 0.0, -0.5,
+             0.5, 0.0, -0.5},
+            biases->shape());
+        evaluate_and_check<float>(
+            output,
+            {0.5, 3.0, 5.5, 1.5, 4.0, 6.5, 2.5, 5.0, 7.5},
+            Shape({3, 3}),
+            context);
+        verify_derivatives<float>(context, {weights, biases}, output, 1e-2);
+    }
+
+    SECTION("Elemwise multiply") {
+        auto weights = Variable::make("weights", {3, 3} , ArrayType::float32);
+        auto biases = Variable::make("biases", {3, 3}, ArrayType::float32);
+        auto output = F<ElemWiseMultiply>(weights, biases);
+        auto context = Context::make_for_device(0);
+        context->init<float>(
+            weights,
+            {0.0f, 3.0f, 6.0,
+             1.0, 4.0, 7.0,
+             2.0, 5.0, 8.0},
+            weights->shape());
+        context->init<float>(
+            biases,
+            {0.5, 0.0, -0.5,
+             0.5, 0.0, -0.5,
+             0.5, 0.0, -0.5},
+            biases->shape());
+        evaluate_and_check<float>(
+            output,
+            {0.0, 0.0, -3, 0.5, 0.0, -3.5, 1.0, 0.0, -4.0},
             Shape({3, 3}),
             context);
         verify_derivatives<float>(context, {weights, biases}, output, 1e-2);
@@ -744,7 +786,6 @@ TEST_CASE("Checking automatic derivations (backprop)") {
 
 
 TEST_CASE("Checking comparisons") {
-    using namespace avalanche;
 
     SECTION("Checking inequality") {
         test_broadcasted_elemwise_op<float, NotEqual, std::int8_t>(
@@ -807,7 +848,6 @@ TEST_CASE("Checking comparisons") {
 
 
 TEST_CASE("In-place update operations") {
-    using namespace avalanche;
 
     SECTION("update_add") {
         auto weights = Constant::tensor<float>({0, 1, 2, 3, 4, 5}, {2, 3});
@@ -842,7 +882,6 @@ TEST_CASE("In-place update operations") {
 
 
 TEST_CASE("Choosing common type for operation") {
-    using namespace avalanche;
     REQUIRE(choose_common_array_type(ArrayType::float32, ArrayType::float64)
             == ArrayType::float64);
     REQUIRE(choose_common_array_type(ArrayType::float32, ArrayType::int32)
@@ -857,11 +896,36 @@ TEST_CASE("Choosing common type for operation") {
 
 TEST_CASE("Broadcast operations on mixed types") {
     SECTION("Mixed Plus") {
-        using namespace avalanche;
         auto value1 = Constant::tensor<float>({0, 1, 2, 3}, Shape({4}));
         auto value2 = Constant::tensor<int>({0, 1, 2, 3}, Shape({4}));
         auto output = F<Plus>(value1, value2);
         REQUIRE(output->dtype() == ArrayType::float32);
         evaluate_and_check<float>(output, {0, 2, 4, 6}, Shape({4}));
     }
+}
+
+
+TEST_CASE("Loss functions") {
+    SECTION("Test of binary cross-entropy") {
+        auto nn_outputs = Variable::make("outputs", {5} , ArrayType::float32);
+        auto labels = Variable::make("labels", {5}, ArrayType::float32);
+        auto output = F<BinaryCrossEntropy>(nn_outputs, labels);
+        auto context = Context::make_for_device(0);
+        context->init<float>(
+            nn_outputs,
+            {0.62671396f, 0.53361464f, 0.5972166f, 0.68630082f, 0.33517416f},
+            nn_outputs->shape());
+        context->init<float>(
+            labels,
+            {1.0f, 0.0f, 1.0f, 0.0f, 0.0f},
+            labels->shape());
+        evaluate_and_check<float>(
+            output,
+            {0.46726505f, 0.76274304f, 0.51547541f, 1.15932078f, 0.40823016f},
+            labels->shape(),
+            context);
+        verify_derivatives<float>(context, {nn_outputs, labels}, output, 1e-2);
+    }
+
+
 }

@@ -11,6 +11,12 @@ namespace avalanche {
 using ShapeDim = std::int64_t;
 constexpr ShapeDim UnknownDim = -1;
 
+struct Range {
+    ShapeDim start;
+    ShapeDim end;
+};
+
+
 class Shape {
 
 public:
@@ -36,6 +42,7 @@ public:
     std::string to_string() const;
     bool is_complete() const;
     bool agrees_with(const Shape &needed) const;
+    bool agrees_with(const std::vector<ShapeDim> &needed) const;
 
     /**
      * Unifies two shapes so they could be used in element-wise broadcasted
@@ -62,6 +69,8 @@ public:
      * negative values (from the end) with their absolute equivalents.
      * */
     std::vector<ShapeDim> normalize_dims(const std::vector<ShapeDim> &dims) const;
+    void normalize_range(const ShapeDim axis, const Range &range,
+                         ShapeDim &real_axis, Range &real_range) const;
 
 
     /**
@@ -70,6 +79,9 @@ public:
      */
     static std::vector<ShapeDim> dims_difference(const Shape &aligned_shape,
                                                  const Shape &result_shape);
+
+    static ShapeDim dims_product(const std::vector<ShapeDim> dims,
+                                 ShapeDim start, ShapeDim end);
 
 
 private:

@@ -25,6 +25,14 @@ std::size_t broadcast_size_masks(const Shape &shape1, const Shape &shape2,
                                  std::vector<cl_ulong> &result_sub_sizes);
 
 
+/**
+ * Base class for many operations involving broadcasting, which allows
+ * to operate on arrays of different shapes without the need to transform
+ * them. This class uses a general kernel doing the job, which every
+ * subclass can tweak as necessary.
+ * More about broadcasting can be found here:
+ * https://docs.scipy.org/doc/numpy/user/basics.broadcasting.html
+ */
 class BroadcastedBinaryOp {
 public:
     Shape shape() const {
