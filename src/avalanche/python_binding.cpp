@@ -255,6 +255,7 @@ Initializer numpy_value_initializer(py::array value) {
             result->wait_until_ready();
             return result;
         },
+        nullptr,
         dtype_to_avalanche_array_type(value.dtype())
     };
     return initializer;
@@ -315,19 +316,21 @@ PYBIND11_MODULE(pyvalanche, m) {
            :toctree: _generate
     )pbdoc";
 
-    py::class_<Shape>(m, "Shape")
+    auto shape_class = py::class_<Shape>(m, "Shape")
         .def(py::init<const std::vector<ShapeDim> &>())
         .def(py::init<ShapeDim>())
         .def("__str__", &Shape::to_string)
         .def("dim", &Shape::dim)
-        .def("dims", &Shape::dim)
+        .def_property_readonly("dims", &Shape::dims)
         .def_property_readonly("size", &Shape::size)
         .def_property_readonly("rank", &Shape::rank)
         .def("is_scalar", &Shape::is_scalar)
         .def("reshape", &Shape::reshape)
         .def("__eq__", &Shape::operator==)
-        .def("__ne__", &Shape::operator!=)
-        .def("__getitem__", &Shape::operator[]);
+        .def("__ne__", &Shape::operator!=);
+    shape_class.attr("UnknownDim") = UnknownDim;
+
+//        .def("__getitem__", &Shape::operator[]);
     py::implicitly_convertible<ShapeDim, Shape>();
 
     py::enum_<ArrayType>(m, "ArrayType")
@@ -515,6 +518,7 @@ PYBIND11_MODULE(pyvalanche, m) {
              py::arg_v("node", "Input tensor"),
              py::arg_v("axis", -1, "Dimension to perform on"))
         .def("reshape", &FU<Reshape, const Shape&>)
+        .def("tile", &FU<Tile, const std::vector<ShapeDim>&>)
         .def("concatenate", &Concatenate::make)
         .def("reduce_sum", &FU<ReduceSum, std::vector<ShapeDim>, bool>, REDUCE_ARGS)
         .def("reduce_mean", &FU<ReduceMean, std::vector<ShapeDim>, bool>, REDUCE_ARGS);

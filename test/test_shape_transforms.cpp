@@ -272,3 +272,75 @@ TEST_CASE("Slicing") {
         verify_derivatives<float>(context, {value}, output, 0.05);
     }
 }
+
+
+TEST_CASE("Tiling") {
+    SECTION("Tiling forward") {
+        INFO("Tiling across across one dimension")
+        auto value = Constant::tensor<float>(
+            {0, 1, 2, 3, 4, 5},
+            Shape({2, 3}));
+        auto output = FU<Tile>(value, std::vector<ShapeDim>({1, 2}));
+        evaluate_and_check<float>(
+            output, {0, 1, 2, 0, 1, 2, 3, 4, 5, 3, 4, 5}, Shape({2, 6}));
+
+        INFO("Tiling across across two dimensions")
+        auto output2 = FU<Tile>(value, std::vector<ShapeDim>({3, 2}));
+        evaluate_and_check<float>(
+            output2,
+            {
+                0, 1, 2, 0, 1, 2,
+                3, 4, 5, 3, 4, 5,
+                0, 1, 2, 0, 1, 2,
+                3, 4, 5, 3, 4, 5,
+                0, 1, 2, 0, 1, 2,
+                3, 4, 5, 3, 4, 5,
+            },
+            Shape({6, 6}));
+
+
+        INFO("Tiling across across three dimensions")
+        auto output3 = FU<Tile>(
+            FU<Reshape>(value, Shape({1, 2, 3})),
+            std::vector<ShapeDim>({2, 3, 2}));
+        evaluate_and_check<float>(
+            output3,
+            {
+                0, 1, 2, 0, 1, 2,
+                3, 4, 5, 3, 4, 5,
+                0, 1, 2, 0, 1, 2,
+                3, 4, 5, 3, 4, 5,
+                0, 1, 2, 0, 1, 2,
+                3, 4, 5, 3, 4, 5,
+
+                0, 1, 2, 0, 1, 2,
+                3, 4, 5, 3, 4, 5,
+                0, 1, 2, 0, 1, 2,
+                3, 4, 5, 3, 4, 5,
+                0, 1, 2, 0, 1, 2,
+                3, 4, 5, 3, 4, 5,
+            },
+            Shape({2, 6, 6}));
+    }
+
+    SECTION("Backward tiling") {
+        auto value = Constant::tensor<float>(
+            {0, 1, 2, 0, 1, 2,
+             3, 4, 5, 3, 4, 5},
+            Shape({2, 6}));
+        auto output = FU<Tile>(value, std::vector<ShapeDim>({1, 2}), false);
+        evaluate_and_check<float>(
+            output, {0, 2, 4, 6, 8, 10}, Shape({2, 3}));
+    }
+
+    SECTION("Back-propagation through tiling") {
+        auto value = Variable::make("inputs", {2, 3}, ArrayType::float32);
+        auto context = Context::make_for_device(0);
+        context->init<float>(
+            value,
+            {0, 1, 2, 3, 4, 5},
+            Shape({2, 3}));
+        auto output = FU<Tile>(value, std::vector<ShapeDim>({1, 2}));
+        verify_derivatives<float>(context, {value}, output, 0.05);
+    }
+}

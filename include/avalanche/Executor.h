@@ -27,12 +27,27 @@ public:
         if (!context) {
             throw std::invalid_argument("No context!");
         }
-        NodeRefList full_node_list;
-        std::copy(_result_nodes.begin(), _result_nodes.end(), std::back_inserter(full_node_list));
-        std::copy(_update_nodes.begin(), _update_nodes.end(), std::back_inserter(full_node_list));
-        auto consumer_map = build_consumers_map(full_node_list);
+        NodeRefList full_output_list;
+        std::copy(_result_nodes.begin(), _result_nodes.end(),
+                  std::back_inserter(full_output_list));
+        std::copy(_update_nodes.begin(), _update_nodes.end(),
+                  std::back_inserter(full_output_list));
+        auto consumer_map = build_consumers_map(full_output_list);
         for (auto &item: consumer_map) {
-            _cache.set_node_params(item.first->id, item.second.size(), 0);
+            // All outputs must receive +1 to the number of their consumers,
+            // because fetching each output is +1 eval, like if we have
+            // an extra node connected
+            bool is_output_node = false;
+            for (const auto &out: full_output_list) {
+                if (out->id == item.first->id) {
+                    is_output_node = true;
+                    break;
+                }
+            }
+            _cache.set_node_params(
+                item.first->id,
+                item.second.size() + (is_output_node ? 1 : 0),
+                0);
         }
     }
 

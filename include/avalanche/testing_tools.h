@@ -57,7 +57,6 @@ void verify_derivatives(avalanche::ContextRef context,
     for (auto &var_node: variables) {
         auto grad_output = grad_table[var_node];
         REQUIRE(grad_output->shape().dims() == var_node->shape().dims());
-        std::cout << grad_output->to_string() << std::endl;
         avalanche::Executor diff_executor(context, {grad_output});
         auto var_array = context->eval(var_node);
         var_array->fetch_data_into(variable_state);

@@ -11,5 +11,4 @@
 
 using namespace avalanche;
 
-TEST_CASE("Concatenation") {
-}
+

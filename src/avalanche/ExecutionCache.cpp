@@ -26,7 +26,6 @@ void ExecutionCache::put(const NodeId node_id, const MultiArrayRef &array) {
         // newly calculated value, so there's no need to cache it
         // one more time
         cached->second.reuse_counter = cached->second.num_descendants - 1;
-    } else {
     }
 }
 

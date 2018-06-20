@@ -848,23 +848,26 @@ TEST_CASE("Checking comparisons") {
 
 
 TEST_CASE("In-place update operations") {
-
     SECTION("update_add") {
         auto weights = Constant::tensor<float>({0, 1, 2, 3, 4, 5}, {2, 3});
         auto updates = Constant::tensor<float>({0, 1, 2, 3, 4, 5}, {2, 3});
         auto context = Context::make_for_device(0);
         auto update_op = F<UpdateAdd>(weights, updates);
+        INFO("Checking how UpdateAdd outputs incremented value");
         evaluate_and_check<float>(update_op, {0, 2, 4, 6, 8, 10}, {2, 3},
                                   context);
+        INFO("Checking that the value remains in the original variable");
         evaluate_and_check<float>(weights, {0, 2, 4, 6, 8, 10}, {2, 3},
                                   context);
+        INFO("Second update should increment the value further");
         evaluate_and_check<float>(update_op, {0, 3, 6, 9, 12, 15}, {2, 3},
                                   context);
+        INFO("Again, the incremented value should remain in the variable");
         evaluate_and_check<float>(weights, {0, 3, 6, 9, 12, 15}, {2, 3},
                                   context);
     }
 
-    SECTION("update_add") {
+    SECTION("update_sub") {
         auto weights = Constant::tensor<float>({0, 1, 2, 3, 4, 5}, {2, 3});
         auto updates = Constant::tensor<float>({0, 1, 2, 3, 4, 5}, {2, 3});
         auto context = Context::make_for_device(0);

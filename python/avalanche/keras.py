@@ -171,9 +171,9 @@ def placeholder(shape=None, ndim=None, dtype=None, sparse=False, name=None):
         if ndim is None:
             raise ValueError('Either the shape of ndim must be provided')
         else:
-            shape = [-1] * ndim
+            shape = [av.Shape.UnknownDim] * ndim
     else:
-        shape = [(-1 if v is None else v) for v in shape]
+        shape = keras_shape_to_avalanche(shape)
     if dtype is None:
         dtype = floatx()
     if sparse:
@@ -188,7 +188,13 @@ def placeholder(shape=None, ndim=None, dtype=None, sparse=False, name=None):
 
 
 def avalanche_shape_to_keras(avalanche_shape):
-    return tuple([(None if v == -1 else v) for v in avalanche_shape])
+    return tuple([(None if v == av.Shape.UnknownDim else v)
+                  for v in avalanche_shape])
+
+
+def keras_shape_to_avalanche(keras_shape):
+    return tuple([(av.Shape.UnknownDim if v is None else v)
+                  for v in keras_shape])
 
 
 def function(inputs, outputs, updates=None, **kwargs):
@@ -366,7 +372,7 @@ def int_shape(x):
     if hasattr(x, '_keras_shape'):
         return x._keras_shape
     elif hasattr(x, 'shape'):
-        return [(i if i >= 0 else None) for i in x.shape]
+        return [(i if i >= 0 else None) for i in x.shape.dims]
     else:
         return None
 
@@ -967,3 +973,54 @@ def concatenate(tensors, axis=-1):
         A tensor.
     """
     return av.ops.concatenate(tensors, axis)
+
+
+def sum(x, axis=None, keepdims=False):
+    """Sum of the values in a tensor, alongside the specified axis.
+
+    # Arguments
+        x: A tensor or variable.
+        axis: An integer, the axis to sum over.
+        keepdims: A boolean, whether to keep the dimensions or not.
+            If `keepdims` is `False`, the rank of the tensor is reduced
+            by 1. If `keepdims` is `True`,
+            the reduced dimension is retained with length 1.
+
+    # Returns
+        A tensor with sum of `x`.
+    """
+    if axis is None:
+        axis = []
+    return av.ops.reduce_sum(x, axis, keepdims)
+
+
+def expand_dims(x, axis=-1):
+    """Adds a 1-sized dimension at index "axis".
+
+    # Arguments
+        x: A tensor or variable.
+        axis: Position where to add a new axis.
+
+    # Returns
+        A tensor with expanded dimensions.
+    """
+    shape = list(int_shape(x))
+    shape = shape[:-axis] + [1] + shape[-axis:]
+
+    return av.ops.reshape(x, av.Shape(keras_shape_to_avalanche(shape)))
+
+
+def tile(x, n):
+    """Creates a tensor by tiling `x` by `n`.
+
+    # Arguments
+        x: A tensor or variable
+        n: A list of integer. The length must be the same as the number of
+            dimensions in `x`.
+
+    # Returns
+        A tiled tensor.
+    """
+    if isinstance(n, int):
+        n = [n]
+    return av.ops.tile(x, n)

@@ -63,7 +63,8 @@ public:
         const Shape &shape1, const Shape &shape2,
         Shape &shape1_aligned, Shape &shape2_aligned,
         Shape &result_shape);
-    static std::string dims_to_string(const std::vector<ShapeDim> &dims);
+    static std::string dims_to_string(const std::vector<ShapeDim> &dims,
+                                      bool convert_unknown = true);
     /**
      * For a given list of dimensions, removes all duplicates and replaces
      * negative values (from the end) with their absolute equivalents.

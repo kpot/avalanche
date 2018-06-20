@@ -36,6 +36,7 @@ void fill_array_with_value(cl::CommandQueue &queue,
 
 ARRAY_DTYPE_SWITCH_FUNCTION(fill_array_switch, fill_array_with_value, void,);
 
+
 const NodeRef Constant::fill(Shape shape, ArrayType dtype, float value) {
     if (!shape.is_complete()) {
         throw std::invalid_argument("The shape must be fully defined");
@@ -47,6 +48,7 @@ const NodeRef Constant::fill(Shape shape, ArrayType dtype, float value) {
             fill_array_switch(dtype, queue, result, value);
             return result;
         },
+        nullptr,
         dtype
     };
     return std::static_pointer_cast<BaseNode>(
@@ -74,16 +76,30 @@ void check_compatibility(const BaseNode *node, T other_thing) {
 
 MultiArrayRef Constant::eval(Context &context, ExecutionCache &cache) const {
     MultiArrayRef cached_value;
-    if (!context.get(id, cached_value)) {
-        cached_value = _initializer.code(context, cache);
-        check_compatibility(this, cached_value);
-        cached_value->set_label(to_string());
-        if (_dependencies.empty()) {
-            // TODO: now we can safely cache the constant only if it doesn't depend from anything else
+    if (!cache.get(id, cached_value)) {
+        // We haven't checked this constant during this run
+        ArrayRefList cached_deps;
+        for (const auto &dep: _dependencies) {
+            cached_deps.emplace_back(dep->eval(context, cache));
+        }
+        if (context.get(id, cached_value)) {
+            // We have already initialized constant in the context
+            if (_initializer.is_cache_valid) {
+                if (!_initializer.is_cache_valid(cached_value,
+                                                 cached_deps)) {
+                    // ... but the constant is outdated now
+                    cached_value = _initializer.code(context, cache);
+                    context.init(id, cached_value);
+                }
+            }
+        } else {
+            // It's the first time we met this constant
+            cached_value = _initializer.code(context, cache);
             context.init(id, cached_value);
         }
-        get_logger()->debug(
-            "Constant {} is now initialized", reinterpret_cast<const void*>(this));
+        // We store the constant in the ExecutionCache so we would not need
+        // to check it again during this run
+        cache.put(id, cached_value);
     }
     return cached_value;
 }
@@ -104,6 +120,7 @@ Constant::tensor(const std::string &name,
             result->buffer_unsafe()->write_from_vector(copy_of_data, 0);
             return result;
         },
+        nullptr,
         dtype
     };
     return std::make_shared<Constant>(
@@ -140,6 +157,13 @@ const NodeRef Constant::fill_shape(const avalanche::NodeRef &shape_node,
             fill_array_switch(dtype, queue, result, value);
             return result;
         },
+        // Cache validity check
+        [](const MultiArrayRef &cached_value, const ArrayRefList &dependencies) {
+            auto shape = dependencies[0];
+            std::vector<ShapeDim> shape_dims;
+            shape->fetch_data_into(shape_dims);
+            return cached_value->shape().dims() == shape_dims;
+        },
         dtype
     };
     // We don't know the shape at this stage, but we know it's rank at least
@@ -170,7 +194,11 @@ Constant::fill_like_with_type(const NodeRef &other_node, ArrayType dtype,
             fill_array_switch(dtype, queue, result, value);
             return result;
         },
-        dtype,
+        // Cache validity check
+        [](const MultiArrayRef &cached_value, const ArrayRefList &dependencies) {
+            return cached_value->shape() == dependencies[0]->shape();
+        },
+        dtype
     };
     return std::static_pointer_cast<BaseNode>(
         std::make_shared<Constant>(
@@ -183,7 +211,7 @@ Constant::fill_like_with_type(const NodeRef &other_node, ArrayType dtype,
 
 const NodeRef
 Constant::zeros_like_with_type(const NodeRef &other_node, ArrayType dtype) {
-    return fill_like_with_type(other_node, dtype, 0);
+    return fill_like_with_type(other_node, dtype, 0.0);
 }
 
 MultiArrayRef Variable::eval(Context &context, ExecutionCache &cache) const {
@@ -243,7 +271,9 @@ Initializer node_initializer(const NodeRef &node) {
                 // (with caching) would have greatly complicated everything.
                 return node->eval(context, cache);
             },
-            node->dtype()};
+            nullptr,
+            node->dtype()
+        };
         return initializer;
     }
     return Initializer{};

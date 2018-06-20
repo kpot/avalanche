@@ -1,4 +1,6 @@
 #include <sstream>
+// FIXME: cleanup
+#include <iostream>
 
 #include <fmt/format.h>
 
@@ -8,8 +10,12 @@
 #include "avalanche/math_ops/simple_arithemic.h"
 #include "avalanche/terminal_nodes.h"
 #include "avalanche/math_ops/messages.h"
+#include "avalanche/CodeCache.h"
+#include "avalanche/opencl_utils.h"
 
 namespace avalanche {
+
+constexpr const std::size_t WORK_GROUP_SIZE = 64;
 
 const NodeRef ShapeOf::apply_chain_rule(const NodeRef &wrt_input,
                                           const NodeRef &d_target_wrt_this,
@@ -491,4 +497,291 @@ MultiArrayRef ProjectOnto::forward(const MultiArrayRef &left,
     return result;
 }
 
+Shape tile_forward_shape(const Shape &shape,
+                         const std::vector<ShapeDim> &multiplies) {
+    std::vector<ShapeDim> result_shape_dims = shape.dims();
+    for (size_t i = 0; i < shape.rank(); ++i) {
+        result_shape_dims[i] *= multiplies[i];
+    }
+    return Shape(result_shape_dims);
+}
+
+Shape tile_backward_shape(const Shape &shape,
+                         const std::vector<ShapeDim> &multiplies) {
+    std::vector<ShapeDim> result_shape_dims = shape.dims();
+    for (size_t i = 0; i < shape.rank(); ++i) {
+        result_shape_dims[i] /= multiplies[i];
+    }
+    return Shape(result_shape_dims);
+}
+
+std::vector<cl_ulong> inner_block_sizes(const Shape &shape) {
+    std::vector<cl_ulong> result(shape.rank());
+    cl_ulong prod = 1;
+    for (ShapeDim i = static_cast<ShapeDim>(shape.rank()) - 1; i >= 0; --i) {
+        result[i] = prod;
+        prod *= shape[i];
+    }
+    return result;
+}
+
+
+std::string tiling_kernel_name(ArrayType orig_dtype, ArrayType tiled_dtype,
+                               bool forward) {
+    return fmt::format(
+        "tiling_{}_{}_{}",
+        forward ? "forward" : "backward",
+        cl_type_name_of_array(orig_dtype),
+        cl_type_name_of_array(tiled_dtype));
+}
+
+
+/**
+ * Generates a kernel performing tiling operation. Since almost the same
+ * code can be used both for the tiling itself and for calculating its
+ * derivative, this function can generate code for both operations,
+ * depending on the parameter `forward`.
+ *
+ * The kernel maps each value of the original array to each value
+ * of the destination.
+ *
+ * @param orig_dtype ArrayType of the original array being tiled.
+ * @param tiled_dtype ArrayType of the tiled array
+ * @param forward If true, the code will be generated for the forward tiling
+ *    operation (which actually replicates the things). When false,
+ *    the generated kernel will perform summation for all replicas of each
+ *    value, outputing the result to the `origin` (so the output for the forward
+ *    operation becomes the input for the backward).
+ * @param work_group_size OpenCL work group size
+ * @return a string containing the kernel
+ */
+std::string tiling_kernel_code(ArrayType orig_dtype, ArrayType tiled_dtype,
+                               bool forward, int work_group_size) {
+
+    constexpr const char *kernel_template = R"clkernel(
+#pragma OPENCL EXTENSION cl_khr_fp64 : enable
+
+__kernel __attribute__((reqd_work_group_size({work_group_size}, 1, 1)))
+void {kernel_name}(
+         __global {orig_dtype} *origin,
+         __global {tiled_dtype} *tiled,
+         uint rank,
+         __constant ulong *orig_shape,
+         __constant ulong *multiplies,
+         __constant ulong *orig_inner_sizes,
+         __constant ulong *tiled_inner_sizes,
+         __local ulong *all_counters,
+         __local ulong *all_current_locations,
+         ulong origin_size) {{
+    if (get_global_id(0) >= origin_size) return;
+    // choosing which part of the scratchpad can be used by this thread
+    __local ulong *counters = all_counters + rank * get_local_id(0);
+    __local ulong *current_location = all_current_locations + rank * get_local_id(0);
+    // Identifying coordinates of the current thread within the original array
+    for (uint i = 0; i < rank; ++i) counters[i] = 0;
+    ulong addr_left = get_global_id(0);
+    for (uint i = 0; i < rank; ++i) {{
+        current_location[i] = addr_left / orig_inner_sizes[i];
+        addr_left = addr_left % orig_inner_sizes[i];
+    }}
+
+    {initialization}
+
+    // Iterating through all possible replicated blocks, storing block
+    // coordinates in counters
+    char the_end = 0;
+    while (!the_end) {{
+        // calculating the offset for this thread within
+        // the next replicated block
+        ulong tiled_offset = 0;
+        for (uint ci = 0; ci < rank; ++ci) {{
+            tiled_offset += (counters[ci] * orig_shape[ci] + current_location[ci]) * tiled_inner_sizes[ci];
+        }}
+
+        {mapping}
+
+        // Switching to next block
+        for (int ci = rank - 1; ci >= 0; --ci) {{
+            ++counters[ci];
+            if (counters[ci] < multiplies[ci]) {{
+                break;
+            }} else {{
+                the_end = (ci == 0);
+                counters[ci] = 0;
+            }}
+        }}
+    }}
+
+    {finalization}
+}}
+    )clkernel";
+
+    std::string initialization, mapping, finalization;
+    if (forward) {
+        initialization = fmt::format(
+            "{} replicate_value = origin[get_global_id(0)];",
+            cl_type_name_of_array(orig_dtype));
+        mapping = "tiled[tiled_offset] = replicate_value;";
+        finalization = "";
+    } else {
+        initialization = fmt::format(
+            "{} accumulated_value = 0;",
+            cl_type_name_of_array(orig_dtype));
+        mapping = "accumulated_value += tiled[tiled_offset];";
+        finalization = "origin[get_global_id(0)] = accumulated_value;";
+    }
+
+    return fmt::format(
+        kernel_template,
+        fmt::arg("kernel_name",
+                 tiling_kernel_name(orig_dtype, tiled_dtype, forward)),
+        fmt::arg("orig_dtype", cl_type_name_of_array(orig_dtype)),
+        fmt::arg("tiled_dtype", cl_type_name_of_array(tiled_dtype)),
+        fmt::arg("work_group_size", work_group_size),
+        fmt::arg("initialization", initialization),
+        fmt::arg("mapping", mapping),
+        fmt::arg("finalization", finalization));
+}
+
+
+Tile::Tile(const NodeRef &input, const std::vector<ShapeDim> &multiples,
+           bool run_forward)
+:_result_dtype{input->dtype()},
+ _multiples{multiples},
+ _kernel_name{
+    tiling_kernel_name(input->dtype(), input->dtype(), run_forward)},
+ _kernel_source{
+    tiling_kernel_code(input->dtype(), input->dtype(),
+                       run_forward, WORK_GROUP_SIZE)},
+ _is_forward_op{run_forward}
+{
+    if (input->shape().rank() != multiples.size()) {
+        throw std::invalid_argument(
+            fmt::format("Cannot tile node {} because the list of multiplies has"
+                        " different size ({}) from the rank of the node ({})",
+                        input->repr(), multiples.size(),
+                        input->shape().rank()));
+    }
+    for (auto m: multiples) {
+        if (m < 1) {
+            throw std::invalid_argument(
+                fmt::format("Cannot tile node {}: the list of multiplies"
+                            "can contain only values >= 1. Currently: {}",
+                            input->repr(),
+                            Shape::dims_to_string(multiples, false)));
+        }
+    }
+    if (_is_forward_op) {
+        std::vector<ShapeDim> result_dims = input->shape().dims();
+        for (std::size_t i = 0; i < multiples.size(); ++i) {
+            if (result_dims[i] != UnknownDim) {
+                result_dims[i] *= multiples[i];
+            }
+        }
+        _tiled_shape = Shape(result_dims);
+        _orig_shape = input->shape();
+    } else {
+        std::vector<ShapeDim> result_dims = input->shape().dims();
+        for (std::size_t i = 0; i < multiples.size(); ++i) {
+            if (result_dims[i] != UnknownDim) {
+                result_dims[i] /= multiples[i];
+            }
+        }
+        _tiled_shape = input->shape();
+        _orig_shape = Shape(result_dims);
+    }
+}
+
+std::string Tile::rh_name() const {
+    return fmt::format(", multiplies={}, forward={})",
+                       Shape::dims_to_string(_multiples, false),
+                       _is_forward_op);
+}
+
+MultiArrayRef Tile::forward(const MultiArrayRef &value) const {
+    auto rank = value->shape().rank();
+    if (rank != _multiples.size()) {
+        // just to be sure
+        std::invalid_argument(
+            "The number of multiplies must match the node's rank");
+    }
+    Shape result_shape, orig_shape;
+    std::vector<cl_ulong> orig_inner_sizes;
+    std::vector<cl_ulong> tiled_inner_sizes;
+    if (_is_forward_op) {
+        result_shape = tile_forward_shape(value->shape(), _multiples);
+        orig_inner_sizes = inner_block_sizes(value->shape());
+        tiled_inner_sizes = inner_block_sizes(result_shape);
+        orig_shape = value->shape();
+    } else {
+        result_shape = tile_backward_shape(value->shape(), _multiples);
+        orig_inner_sizes = inner_block_sizes(result_shape);
+        tiled_inner_sizes = inner_block_sizes(value->shape());
+        orig_shape = result_shape;
+    }
+    auto pool = value->buffer_unsafe()->pool();
+    auto multiplies_buffer = pool->reserve_buffer_for_vector(_multiples);
+    auto orig_shape_buffer = pool->reserve_buffer_for_vector(orig_shape.dims());
+    auto orig_inner_buffer = pool->reserve_buffer_for_vector(orig_inner_sizes);
+    auto tiled_inner_buffer = pool->reserve_buffer_for_vector(tiled_inner_sizes);
+    auto constants_are_ready = make_event_list(
+        {multiplies_buffer->write_from_vector(_multiples, 0),
+         orig_shape_buffer->write_from_vector(orig_shape.dims(), 0),
+         orig_inner_buffer->write_from_vector(orig_inner_sizes, 0),
+         tiled_inner_buffer->write_from_vector(tiled_inner_sizes, 0)});
+    auto all_data_are_ready = make_event_list(
+        {value->buffer_unsafe()->completion_event()});
+    std::copy(constants_are_ready.begin(), constants_are_ready.end(),
+              std::back_inserter(all_data_are_ready));
+    auto queue = pool->cl_queue();
+    auto result = pool->make_array(result_shape, dtype());
+    result->add_dependencies({value});
+    result->add_dependencies({multiplies_buffer, orig_shape_buffer,
+                              orig_inner_buffer, tiled_inner_buffer});
+    auto program = CodeCache::get_default().get_program(
+        pool->cl_context(), queue,
+        _kernel_name, _kernel_source, "");
+    auto kernel = cl::Kernel(program, _kernel_name.c_str());
+    kernel.setArg(0, _is_forward_op ? value->cl_buffer_unsafe()
+                                    : result->cl_buffer_unsafe());
+    kernel.setArg(1, _is_forward_op ? result->cl_buffer_unsafe()
+                                    : value->cl_buffer_unsafe());
+    kernel.setArg(2, static_cast<cl_uint>(value->shape().rank()));
+    kernel.setArg(3, orig_shape_buffer->cl_buffer_unsafe());
+    kernel.setArg(4, multiplies_buffer->cl_buffer_unsafe());
+    kernel.setArg(5, orig_inner_buffer->cl_buffer_unsafe());
+    kernel.setArg(6, tiled_inner_buffer->cl_buffer_unsafe());
+    kernel.setArg(7, static_cast<cl_ulong>(rank * sizeof(cl_ulong) * WORK_GROUP_SIZE), nullptr);
+    kernel.setArg(8, static_cast<cl_ulong>(rank * sizeof(cl_ulong) * WORK_GROUP_SIZE), nullptr);
+    kernel.setArg(9, static_cast<cl_ulong>(value->shape().size()));
+    const auto work_items = make_divisible_by(WORK_GROUP_SIZE, value->shape().size());
+    cl::Event operation_is_done;
+    queue.enqueueNDRangeKernel(
+        kernel,
+        cl::NullRange,
+        cl::NDRange(work_items),
+        cl::NDRange(WORK_GROUP_SIZE),
+        &all_data_are_ready,
+        &operation_is_done);
+    cl::WaitForEvents(constants_are_ready);
+    result->set_completion_event(operation_is_done);
+    operation_is_done.wait();
+    return result;
+}
+
+const NodeRef Tile::apply_chain_rule(const NodeRef &wrt_input,
+                                     const NodeRef &d_target_wrt_this,
+                                     const NodeRefList &all_inputs) const {
+    if (_is_forward_op) {
+        return FU<Tile>(d_target_wrt_this, _multiples, false);
+    } else {
+        throw std::runtime_error("Not implemented");
+    }
+}
+
+const NodeRef NoBackProp::apply_chain_rule(const NodeRef &wrt_input,
+                                           const NodeRef &d_target_wrt_this,
+                                           const NodeRefList &all_inputs) const {
+    return Constant::zeros_like(wrt_input);
+}
 } // namespace

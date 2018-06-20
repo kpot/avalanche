@@ -2,9 +2,10 @@
 #define AVALANCHE_SHAPENODE_H
 
 /**
- * This module contains anything transforming the shape or purpose of the data
- * without changing the content. This includes reshaping, fetching the shape
- * as a tensor,  concatenation of several nodes, etc.
+ * This module contains the code transforming the shape or
+ * restructuring/replicating the data without changing the content.
+ * This includes reshaping, fetching the shape as a tensor,
+ * slicing, concatenation of several nodes, etc.
  */
 
 #include "avalanche/BaseNode.h"
@@ -44,9 +45,7 @@ public:
 
     const NodeRef apply_chain_rule(const NodeRef &wrt_input,
                                    const NodeRef &d_target_wrt_this,
-                                   const NodeRefList &all_inputs) const {
-        return nullptr;
-    };
+                                   const NodeRefList &all_inputs) const;;
 
 
 private:
@@ -65,7 +64,7 @@ public:
     std::string rh_name() const { return ")"; }
 
     const Shape& shape() const { return _result_shape; }
-    static ArrayType dtype() { return ArrayType::int64; }
+    static ArrayType dtype() { return dtype_of_static_type<ShapeDim>; }
 
     MultiArrayRef forward(const MultiArrayRef &value) const;
 
@@ -149,10 +148,9 @@ public:
 
     const Shape& shape() const { return _result_shape; }
     ArrayType dtype() const { return _result_dtype; }
-
-    MultiArrayRef forward(const MultiArrayRef &value) const;
     std::string lh_name() const { return "SliceAxis("; }
     std::string rh_name() const;
+    MultiArrayRef forward(const MultiArrayRef &value) const;
 
     const NodeRef apply_chain_rule(
         const NodeRef &wrt_input,
@@ -200,6 +198,50 @@ private:
     ShapeDim _dest_range_start;
 };
 
+/**
+ * Replicates given node along dimensions
+ *
+ * When forward = false, works like "tiling in reverse", collapsing tiled array
+ * into just one tile by summing up all replicas together (necessary
+ * for back-propagation through the forward tiling).
+ */
+class Tile {
+public:
+    Tile(const NodeRef &input, const std::vector<ShapeDim> &multiples,
+         bool run_forward = true);
+
+    const Shape& shape() const {
+        return _is_forward_op ? _tiled_shape : _orig_shape;
+    }
+    ArrayType dtype() const { return _result_dtype; }
+
+    std::string lh_name() const { return "Tile("; }
+    std::string rh_name() const;
+
+    bool use_in_back_propagation() const { return true; }
+
+    MultiArrayRef forward(const MultiArrayRef &value) const;
+
+    const NodeRef apply_chain_rule(
+        const NodeRef &wrt_input,
+        const NodeRef &d_target_wrt_this,
+        const NodeRefList &all_inputs) const;
+
+private:
+    Shape _orig_shape;
+    Shape _tiled_shape;
+    const ArrayType _result_dtype;
+    const std::vector<ShapeDim> _multiples;
+    std::string _kernel_name;
+    std::string _kernel_source;
+    const bool _is_forward_op;
+};
+
+namespace ops {
+NodeRef tile(const NodeRef &input, const std::vector<ShapeDim> &multiples,
+             bool run_forward = true);
+}
+
 /** Concatenates multiple nodes along a given axis */
 class Concatenate : public BaseNode {
 public:
@@ -229,6 +271,7 @@ private:
 
     explicit Concatenate(const NodeRefList &nodes, ShapeDim axis = -1);
 };
+
 
 } // namespace
 

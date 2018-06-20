@@ -14,9 +14,24 @@ namespace avalanche {
 
 using InitializerFunc = std::function<
     MultiArrayRef(Context &context, ExecutionCache &cache)>;
+using InitializerValidityCheck = std::function<
+    bool(const MultiArrayRef &cached_value, const ArrayRefList &dependencies)>;
 
+
+/**
+ * Represents all we need to initialize a constant or a variable in runtime.
+ * Can be non-functional if the code references are nullptr
+ * (see operator bool())
+ */
 struct Initializer {
+    // Generates a new value of a variable or a constant. Usually called
+    // only once, after that the value gets cached
     InitializerFunc code = nullptr;
+    // Checks if for some reason the existing cache of a constant has become
+    // outdated. Check Constant::eval for more detail.
+    InitializerValidityCheck is_cache_valid = nullptr;
+    // The type of values the cache generates. Helps in validating initializers
+    // before the first use
     ArrayType dtype = ArrayType::int8;
 
     explicit operator bool() const {
@@ -45,11 +60,14 @@ Initializer value_initializer(
             result->write_from_vector(data);
             return result;
         },
+        nullptr,
         dtype_of_static_type<T>
     };
     return initializer;
 }
 
+
+/** Initializes variables before the first use */
 Initializer node_initializer(const NodeRef &node);
 
 

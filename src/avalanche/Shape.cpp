@@ -172,11 +172,12 @@ Shape::Shape(std::initializer_list<ShapeDim> dims) :_dims(dims) {
     validate_dims(_dims);
 }
 
-std::string Shape::dims_to_string(const std::vector<ShapeDim> &dims) {
+std::string Shape::dims_to_string(const std::vector<ShapeDim> &dims,
+                                  bool convert_unknown) {
     std::ostringstream result;
     result << "{";
     for (std::size_t i = 0; i < dims.size(); ++i) {
-        if (dims[i] == UnknownDim) {
+        if (dims[i] == UnknownDim && convert_unknown) {
             result << "?";
         } else {
             result << dims[i];

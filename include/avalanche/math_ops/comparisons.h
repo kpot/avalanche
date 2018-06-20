@@ -82,7 +82,6 @@ public:
     std::string name() const { return "<="; }
 };
 
-
 } // namespace
 
 #endif //AVALANCHE_COMPARISONS_H
