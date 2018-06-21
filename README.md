@@ -9,17 +9,23 @@ The project was created as an attempt to better understand how modern deep learn
 frameworks like TensorFlow do their job and to practice programming GPUs.
 Like any decent deep ML framework these days,
 Avalanche is based on a computational graph model. It supports
-automatic differentiation, broadcasted operations, automatic memory management
-and can utilize multiple GPUs if needed.
+automatic differentiation, broadcasted operations, automatic memory management,
+can utilize multiple GPUs if needed.
 
 The framework also works a backend for Keras, so if you know Keras, you can begin to use
 Avalanche without the need to learn anything about it.
+
+Please note, however, that this project is highly experimental and it lacks many
+features typical for more mature projects. So if you're new in the field,
+better try something like TensorFlow, PyTorch or PlaidML first
+(the last one if you need supports of OpenCL).
+
 
 Installation
 ------------
 First of all, make sure that you have
 
-- A modern [C++14 compliant compiler](https://en.cppreference.com/w/cpp/compiler_support)
+- [A C++14 compliant compiler](https://en.cppreference.com/w/cpp/compiler_support)
 - CMake >= 3.3
 - Python >= 3.6.1
 - OpenCL libraries / drivers installed
