@@ -116,7 +116,9 @@ const NodeRef Power::apply_chain_rule(const NodeRef &wrt_input,
         // d(x^a)/da = x^a * log(x)
         part_derivative = F<Multiply>(
             d_target_wrt_this,
-            // TODO: Can be improved by replacing F<Power>(...) with a reference to this node (which would require to change the signature of apply_chain_rule method everywhere)
+            // TODO: Can be improved by replacing F<Power>(...) with a reference
+            // to this node (which would require to change the signature
+            // of apply_chain_rule method everywhere)
             F<Multiply>(
                 F<Power>(all_inputs[0], all_inputs[1]),
                 F<Log>(all_inputs[0])));

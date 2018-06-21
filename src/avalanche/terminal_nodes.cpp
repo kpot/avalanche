@@ -17,9 +17,6 @@ template <typename T>
 void fill_array_with_value(cl::CommandQueue &queue,
                            MultiArrayRef &array,
                            float value) {
-    get_logger()->debug(
-        "Filling buffer {}",
-        reinterpret_cast<void*>(array->buffer_unsafe().get()));
     cl::Event result_event;
     T casted_value = to_array_type<T>(value);
     queue.enqueueFillBuffer(

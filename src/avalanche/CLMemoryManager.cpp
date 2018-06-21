@@ -94,7 +94,6 @@ std::shared_ptr<CLMemoryManager> CLMemoryManager::get_default() {
 }
 
 CLMemoryManager::~CLMemoryManager() {
-    // FIXME: Cleanup
     std::cout << "CLMemory manager has been destroyed\n";
 }
 

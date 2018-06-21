@@ -4,7 +4,6 @@
 #include <sstream>
 
 #include <fmt/format.h>
-//#include "backward.hpp"
 
 #include "avalanche/Shape.h"
 
@@ -13,10 +12,6 @@ namespace avalanche {
 std::size_t avalanche::Shape::size() const {
     if (std::any_of(_dims.begin(), _dims.end(),
                     [](ShapeDim dim) { return dim <= 0; })) {
-        // FIXME: Cleanup
-//        using namespace backward;
-//        StackTrace st; st.load_here(32);
-//        Printer p; p.print(st);
         throw std::out_of_range(
             "Cannot calculate the size of a shape having dimensions "
             "of 0 size or undefined");
@@ -27,8 +22,6 @@ std::size_t avalanche::Shape::size() const {
 }
 
 Shape Shape::reshape(const std::vector<ShapeDim> &dims) const {
-    // FIXME: Cleanup
-//    fmt::print("Attempting to reshape {} into {}", this->to_string(), Shape::dims_to_string(dims));
     std::size_t new_part_size = 1,
         undefined_dim_index = 0,
         i = 0;

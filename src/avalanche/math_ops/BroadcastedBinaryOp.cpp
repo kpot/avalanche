@@ -160,28 +160,18 @@ MultiArrayRef avalanche::BroadcastedBinaryOp::forward(
     right_mask_buffer->set_label(__func__, __LINE__);
     auto result_sizes_buffer = pool->reserve_buffer_for_vector(result_sub_sizes);
     result_sizes_buffer->set_label(__func__, __LINE__);
-    // FIXME: Cleanup
-    // You kinda have a problem here
-    // The problem is that you use both the cl::Event directly when you schedule
-    // something for execution, but you also rely on callbacks for some extra
-    // processing. The problem is that you cannot guarantee when the callback
-    // will arrive. And sometimes it happens after the actual Buffer has already
-    // been destroyed!
 
-    // Here we send the data to the buffers, plus create the full
-    // list of operations we need to be done before we can start
-    // performing computations.
-//    for (auto i: left_size_mask) { std::cout << i << ", "; } std::cout << std::endl;
-//    for (auto i: right_size_mask) { std::cout << i << ", "; } std::cout << std::endl;
-//    for (auto i: result_sub_sizes) { std::cout << i << ", "; } std::cout << std::endl;
-    auto data_are_ready = make_event_list(
+
+
+    auto masks_are_ready = make_event_list(
         {left_mask_buffer->write_from_vector(left_size_mask, 0),
          right_mask_buffer->write_from_vector(right_size_mask, 0),
-         result_sizes_buffer->write_from_vector(result_sub_sizes, 0),
-         v1->buffer_unsafe()->completion_event(),
+         result_sizes_buffer->write_from_vector(result_sub_sizes, 0)});
+    auto data_are_ready = make_event_list(
+        {v1->buffer_unsafe()->completion_event(),
          v2->buffer_unsafe()->completion_event()});
-//    cl::WaitForEvents(data_are_ready);
-//    pool->cl_queue().flush();
+    std::copy(masks_are_ready.begin(), masks_are_ready.end(),
+              std::back_inserter(data_are_ready));
     auto result = pool->make_array(result_shape, _result_dtype);
     result->set_label(_operation_name + " at " + __func__, __LINE__);
     // To keep the buffers alive until the computation is done we add them
@@ -213,12 +203,12 @@ MultiArrayRef avalanche::BroadcastedBinaryOp::forward(
         result_sizes_buffer->cl_buffer_unsafe(),
         static_cast<cl_ulong>(result_size),
         static_cast<cl_int>(left_size_mask.size()));
+    // Without waiting we cannot guarantee that OpenCL will have enough
+    // time to copy all the data into the buffers before the vectors are gone
+    cl::WaitForEvents(masks_are_ready);
     // Let us know when everything is done by marking the resulting array
     // as "complete" (ready)
     result->set_completion_event(result_event);
-    // Without waiting we cannot guarantee that OpenCL will have enough
-    // time to copy all the data into the buffers before the vectors are gone
-    result->wait_until_ready();
     return result;
 }
 

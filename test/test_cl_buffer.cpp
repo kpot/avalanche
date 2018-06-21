@@ -30,5 +30,3 @@ TEST_CASE("Filling/fetching CLBuffer using vectors") {
         REQUIRE(result[i] == i);
     }
 }
-
-// TODO: Check how dependency works

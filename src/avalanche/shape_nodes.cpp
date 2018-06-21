@@ -1,6 +1,4 @@
 #include <sstream>
-// FIXME: cleanup
-#include <iostream>
 
 #include <fmt/format.h>
 

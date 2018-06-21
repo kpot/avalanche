@@ -346,8 +346,6 @@ PYBIND11_MODULE(pyvalanche, m) {
     py::class_<BaseNode, NodeRef>(m, "BaseNode", py::dynamic_attr())
         .def(py::init(&Constant::scalar<float>))
         .def(py::init([](long value) {
-            // FIXME: Cleanup
-            std::cout << "Converting value " << value << " to a scalar tensor\n";
             return Constant::scalar(ArrayType::float32, static_cast<float>(value));
         }))
         .def("__str__", &BaseNode::to_string)

@@ -10,15 +10,13 @@
 namespace avalanche {
 
 void buffer_event_occurred(cl_event event, cl_int status, void *user_data) {
-    auto logger = get_logger();
     auto buffer = static_cast<CLBuffer*>(user_data);
     if (event != buffer->_ready_event.get()) {
+        auto logger = get_logger();
         logger->error("Buffer {} Received a call back "
                       "from an already cancelled event!", buffer->_label);
         return;
     }
-    // FIXME: Wrap into logging
-    logger->debug("Buffer {} ({}) Received a callback", buffer->_label, (void*)buffer);
     buffer->clear_dependencies();
     if (status < 0) {
         buffer->_ready_promise.set_exception(
@@ -58,7 +56,6 @@ void CLBuffer::set_completion_event(const cl::Event &event) {
 CLBuffer::~CLBuffer() {
     if (_pool) {
         // cannot be destroyed until the event is done
-        get_logger()->debug("Returning buffer {} the size of {} bytes back to the bucket {}", _label, _size, _bucket);
         wait_until_ready();
         _dependencies.clear();
         _ready_event = nullptr;
