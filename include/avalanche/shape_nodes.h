@@ -10,6 +10,7 @@
 
 #include "avalanche/BaseNode.h"
 #include "avalanche/Shape.h"
+#include "avalanche/terminal_nodes.h"
 
 namespace avalanche {
 
@@ -54,28 +55,21 @@ private:
 };
 
 
-class ShapeOf {
+class ShapeOf : public Constant {
 public:
-    ShapeOf(const NodeRef &input)
-        :_result_shape({static_cast<ShapeDim>(input->shape().rank())}) {
+    static const auto DType = ArrayType::int64;
+
+    static NodeRef make(const NodeRef &other_node) {
+        auto *raw_ptr = new ShapeOf(other_node);
+        return std::static_pointer_cast<BaseNode>(
+            std::shared_ptr<ShapeOf>(raw_ptr));
     }
 
-    std::string lh_name() const { return "ShapeOf("; }
-    std::string rh_name() const { return ")"; }
-
-    const Shape& shape() const { return _result_shape; }
-    static ArrayType dtype() { return dtype_of_static_type<ShapeDim>; }
-
-    MultiArrayRef forward(const MultiArrayRef &value) const;
-
-    bool use_in_back_propagation() const { return false; }
-
-    const NodeRef apply_chain_rule(const NodeRef &wrt_input,
-                                   const NodeRef &d_target_wrt_this,
-                                   const NodeRefList &all_inputs) const;
-
+    static std::vector<ShapeDim> extract_shape_from_metadata(
+        const MultiArrayRef &cached_value);
 private:
-    Shape _result_shape;
+    explicit ShapeOf(const NodeRef &input);
+
 };
 
 
@@ -99,6 +93,35 @@ public:
 private:
     const Shape _new_shape;
     const ArrayType _result_dtype;
+};
+
+
+class ReshapeLike : public BaseNode {
+public:
+    MultiArrayRef eval(Context &context, ExecutionCache &cache) const override;
+
+    std::string to_string() const override;
+
+    NodeRefList inputs() const override;
+
+    std::string repr() const override {
+        return format_repr("ReshapeLike", "");
+    }
+
+    const NodeRef apply_chain_rule(
+        const NodeRef &wrt_input,
+        const NodeRef &d_target_wrt_this,
+        const NodeRefList &all_inputs) const override ;
+
+    bool use_in_back_propagation() const override { return true; }
+
+    static NodeRef make(const NodeRef &input, const NodeRef &like_node);
+
+private:
+    const NodeRef _input;
+    const NodeRef _shape_node;
+
+    ReshapeLike(const NodeRef &input, const NodeRef &like_node);
 };
 
 /**
@@ -141,10 +164,59 @@ private:
 };
 
 
+class ExpandDims {
+public:
+    ExpandDims(const NodeRef &input, ShapeDim axis);
+    const Shape& shape() const { return _result_shape; }
+    ArrayType dtype() const { return _result_dtype; }
+    std::string lh_name() const { return "ExpandDims("; }
+    std::string rh_name() const;
+    MultiArrayRef forward(const MultiArrayRef &value) const;
+
+    const NodeRef apply_chain_rule(
+        const NodeRef &wrt_input,
+        const NodeRef &d_target_wrt_this,
+        const NodeRefList &all_inputs) const;;
+
+    bool use_in_back_propagation() const { return true; }
+
+private:
+    ShapeDim _axis;
+    Shape _result_shape;
+    ArrayType _result_dtype;
+
+    ShapeDim normalize_axis(const Shape &shape, ShapeDim axis);
+};
+
+
+class Squeeze {
+public:
+    Squeeze(const NodeRef &input, ShapeDim axis);
+    const Shape& shape() const { return _result_shape; }
+    ArrayType dtype() const { return _result_dtype; }
+    std::string lh_name() const { return "Squeeze("; }
+    std::string rh_name() const;
+    MultiArrayRef forward(const MultiArrayRef &value) const;
+
+    const NodeRef apply_chain_rule(
+        const NodeRef &wrt_input,
+        const NodeRef &d_target_wrt_this,
+        const NodeRefList &all_inputs) const;;
+
+    bool use_in_back_propagation() const { return true; }
+
+private:
+    ShapeDim _axis;
+    Shape _result_shape;
+    ArrayType _result_dtype;
+};
+
+
 class SliceAxis {
 public:
     SliceAxis(const NodeRef &input, ShapeDim axis,
-              ShapeDim range_start, ShapeDim range_end);
+              ShapeDim range_start, ShapeDim range_end,
+              bool keep_dims = true);
 
     const Shape& shape() const { return _result_shape; }
     ArrayType dtype() const { return _result_dtype; }
@@ -160,6 +232,7 @@ public:
     bool use_in_back_propagation() const { return true; }
 
 private:
+    bool _keep_dims;
     Shape _result_shape;
     ArrayType _result_dtype;
     ShapeDim _axis;
@@ -237,10 +310,6 @@ private:
     const bool _is_forward_op;
 };
 
-namespace ops {
-NodeRef tile(const NodeRef &input, const std::vector<ShapeDim> &multiples,
-             bool run_forward = true);
-}
 
 /** Concatenates multiple nodes along a given axis */
 class Concatenate : public BaseNode {
@@ -272,6 +341,7 @@ private:
     explicit Concatenate(const NodeRefList &nodes, ShapeDim axis = -1);
 };
 
+NodeRef stack_nodes(const NodeRefList &nodes, ShapeDim axis = 0);
 
 } // namespace
 

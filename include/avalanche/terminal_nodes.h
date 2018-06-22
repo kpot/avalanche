@@ -8,7 +8,6 @@
 #include "avalanche/BaseNode.h"
 #include "avalanche/Context.h"
 #include "avalanche/ExecutionCache.h"
-#include "avalanche/shape_nodes.h"
 
 namespace avalanche {
 
@@ -230,7 +229,10 @@ public:
         return fill_like(other_node, 0);
     }
 
-    static const NodeRef zeros_like_with_type(const NodeRef &other_node, ArrayType dtype);
+    static const NodeRef zeros_like_with_type(const NodeRef &other_node,
+                                              ArrayType dtype);
+    static const NodeRef ones_like_with_type(const NodeRef &other_node,
+                                             ArrayType dtype);
 
     static const NodeRef fill_shape(const NodeRef &shape_node, ArrayType dtype,
                                     float value);

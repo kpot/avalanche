@@ -29,8 +29,9 @@ public:
     // Creates a new multi-array sharing the same buffer and the same
     // promise object.
     MultiArrayRef reshape(const std::vector<ShapeDim> &shape_dims) {
-        return std::shared_ptr<MultiArray>(
-            new MultiArray(_buffer, _shape.reshape(shape_dims), _dtype));
+        auto clone_with_different_shape = new MultiArray(
+            _buffer, _shape.reshape(shape_dims), _dtype);
+        return std::shared_ptr<MultiArray>(clone_with_different_shape);
     }
 
     std::size_t size() const { return _shape.size(); }
@@ -135,6 +136,21 @@ public:
 
     std::size_t buffer_offset() { return _buffer_offset; }
 
+    template <typename Vector>
+    void write_metadata(const Vector &data) {
+        const auto bytes_to_write = sizeof(typename Vector::value_type) * data.size();
+        _metadata.resize(bytes_to_write);
+        std::memcpy(_metadata.data(), data.data(), bytes_to_write);
+    }
+
+    template <typename Vector>
+    void read_metadata(Vector &data) {
+        const auto items_to_read = (
+            _metadata.size() / sizeof(typename Vector::value_type));
+        data.resize(items_to_read);
+        std::memcpy(data.data(), _metadata.data(), _metadata.size());
+    }
+
 private:
     MultiArray(
         const CLBufferRef &buffer,
@@ -151,6 +167,7 @@ private:
     std::size_t _buffer_offset;  // Offset in records (not bytes)
     Shape _shape;
     ArrayType _dtype;
+    std::vector<uint8_t> _metadata;
 };
 
 } // namespace

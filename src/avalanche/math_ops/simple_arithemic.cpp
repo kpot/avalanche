@@ -8,6 +8,7 @@
 #include "avalanche/math_ops/messages.h"
 #include "avalanche/math_ops/const_transformation.h"
 #include "avalanche/math_ops/reductions.h"
+#include "avalanche/shape_nodes.h"
 
 namespace avalanche {
 

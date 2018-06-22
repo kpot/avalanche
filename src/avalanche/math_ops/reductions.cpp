@@ -352,5 +352,4 @@ const NodeRef softmax(const NodeRef &node, const ShapeDim axis) {
     return exp_node / sum_node;
 }
 
-
 } // namespace

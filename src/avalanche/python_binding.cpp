@@ -10,48 +10,6 @@
 
 namespace py = pybind11;
 
-//namespace pybind11 { namespace detail {
-//template <> struct type_caster<avalanche::NodeRef> {
-//public:
-//    /**
-//     * This macro establishes the name 'inty' in
-//     * function signatures and declares a local variable
-//     * 'value' of type inty
-//     */
-//PYBIND11_TYPE_CASTER(avalanche::NodeRef, _("NodeRef"));
-//
-//    /**
-//     * Conversion part 1 (Python->C++): convert a PyObject into a inty
-//     * instance or return false upon failure. The second argument
-//     * indicates whether implicit conversions should be applied.
-//     */
-//    bool load(handle src, bool) {
-//        /* Extract PyObject from handle */
-//        PyObject *source = src.ptr();
-//        /* Try converting into a Python integer value */
-//        PyObject *tmp = PyNumber_Long(source);
-//        if (!tmp)
-//            return false;
-//        /* Now try to convert into a C++ int */
-//        value = avalanche::Constant::scalar(static_cast<float>(PyLong_AsLong(tmp)));
-//        Py_DECREF(tmp);
-//        /* Ensure return code was OK (to avoid out-of-range errors etc) */
-//        return !PyErr_Occurred();
-//    }
-//
-////    /**
-////     * Conversion part 2 (C++ -> Python): convert an inty instance into
-////     * a Python object. The second and third arguments are used to
-////     * indicate the return value policy and parent object (for
-////     * ``return_value_policy::reference_internal``) and are generally
-////     * ignored by implicit casters.
-////     */
-////    static handle cast(inty src, return_value_policy /* policy */, handle /* parent */) {
-////        return PyLong_FromLong(src.long_value);
-////    }
-//};
-//}}
-
 namespace avalanche {
 
 class PyBaseNode : public BaseNode {
@@ -330,7 +288,6 @@ PYBIND11_MODULE(pyvalanche, m) {
         .def("__ne__", &Shape::operator!=);
     shape_class.attr("UnknownDim") = UnknownDim;
 
-//        .def("__getitem__", &Shape::operator[]);
     py::implicitly_convertible<ShapeDim, Shape>();
 
     py::enum_<ArrayType>(m, "ArrayType")
@@ -370,6 +327,9 @@ PYBIND11_MODULE(pyvalanche, m) {
         })
         .def("__rsub__", [](const NodeRef &node, float value) -> NodeRef {
             return F<Minus>(Constant::scalar(value), node);
+        })
+        .def("__getitem__", [](const NodeRef &node, ShapeDim axis) {
+            return FU<SliceAxis>(node, 0, axis, axis, false);
         })
         .def("__getitem__", [](const NodeRef &node, py::slice single_slice) {
             return py_slice_node(node, single_slice, 0);
@@ -446,6 +406,7 @@ PYBIND11_MODULE(pyvalanche, m) {
     m.def_submodule("consts", "Available constants")
         .def("zeros", &Constant::zeros)
         .def("zeros_like_with_type", &Constant::zeros_like_with_type)
+        .def("ones_like_with_type", &Constant::ones_like_with_type)
         .def("ones", &Constant::ones)
         .def("from_array", &make_constant_from_numpy, "Creates a new constant");
 
@@ -516,23 +477,17 @@ PYBIND11_MODULE(pyvalanche, m) {
              py::arg_v("node", "Input tensor"),
              py::arg_v("axis", -1, "Dimension to perform on"))
         .def("reshape", &FU<Reshape, const Shape&>)
+        .def("reshape_like", &ReshapeLike::make)
+        .def("shape", &ShapeOf::make)
+        .def("expand_dims", &FU<ExpandDims, ShapeDim>)
+        .def("squeeze", &FU<Squeeze, ShapeDim>)
         .def("tile", &FU<Tile, const std::vector<ShapeDim>&>)
         .def("concatenate", &Concatenate::make)
+        .def("stack", &stack_nodes)
         .def("reduce_sum", &FU<ReduceSum, std::vector<ShapeDim>, bool>, REDUCE_ARGS)
-        .def("reduce_mean", &FU<ReduceMean, std::vector<ShapeDim>, bool>, REDUCE_ARGS);
-//    .def("plus", [](const NodeRef &left, const NodeRef &right) -> NodeRef { return std::static_pointer_cast<BaseNode>(std::make_shared<Plus>(left, right)); });
-//    .def("matmul", &F<MatMul>);
+        .def("reduce_mean", &FU<ReduceMean, std::vector<ShapeDim>, bool>, REDUCE_ARGS)
+        .def("reduce_prod", &FU<ReduceMean, std::vector<ShapeDim>, bool>, REDUCE_ARGS);
 #undef REDUCE_ARGS
-
-//m.def("add", &add, R"pbdoc(
-//        Add two numbers
-//        Some other explanation about the add function.
-//    )pbdoc");
-//
-//m.def("subtract", [](int i, int j) { return i - j; }, R"pbdoc(
-//        Subtract two numbers
-//        Some other explanation about the subtract function.
-//    )pbdoc");
 
 #ifdef VERSION_INFO
     m.attr("__version__") = VERSION_INFO;

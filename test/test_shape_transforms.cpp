@@ -243,7 +243,7 @@ TEST_CASE("Slicing") {
         // Second must be a new buffer
         REQUIRE(results[1]->buffer_unsafe() != results[0]->buffer_unsafe());
         REQUIRE(results[1]->buffer_offset() == 0);
-        REQUIRE(results[1]->shape() == Shape({2, 3, 2}));
+        REQUIRE(results[1]->shape().dims() == Shape({2, 3, 2}).dims());
         // Checking the exact content
         evaluate_and_check<float>(
             output_with_offset,
@@ -255,6 +255,31 @@ TEST_CASE("Slicing") {
             {10, 11,   12, 13,   14, 15,
              18, 19,   20, 21,   22, 23},
             Shape({2, 3, 2}));
+    }
+
+
+    SECTION("Slicing with dropping dimensions == 1") {
+        // This test verifies the accuracy of a strided slice when the source
+        // buffer already uses some offset
+        auto value = Constant::tensor<float>(
+            {0, 1,    2, 3,     4, 5,     6, 7,
+             8, 9,    10, 11,   12, 13,   14, 15,
+             16, 17,  18, 19,   20, 21,   22, 23},
+            Shape({3, 4, 2}));
+        auto output = FU<SliceAxis>(value, 1, 1, 1, false);
+        REQUIRE(output->shape() == Shape({3, 2}));
+        Executor executor(Context::make_for_device(0), {output});
+        auto results = executor.run();
+        // First result should be just the same buffer as value, with an offset
+        REQUIRE(results[0]->buffer_offset() == 0);
+        REQUIRE(results[0]->shape() == Shape({3, 2}));
+        // Checking the exact content
+        evaluate_and_check<float>(
+            output,
+            {2, 3,
+             10, 11,
+             18, 19},
+            Shape({3, 2}));
     }
 
     SECTION("Back-propagation through slicing") {
@@ -269,6 +294,30 @@ TEST_CASE("Slicing") {
         auto output_with_offset = FU<SliceAxis>(value, 0, 1, 2);
         verify_derivatives<float>(context, {value}, output_with_offset, 0.05);
         auto output = FU<SliceAxis>(output_with_offset, 1, 1, 3);
+        verify_derivatives<float>(context, {value}, output, 0.05);
+    }
+
+
+    SECTION("Back-propagation through slicing with dropped dimensions") {
+        auto value = Variable::make("inputs", {3, 4, 2}, ArrayType::float32);
+        auto context = Context::make_for_device(0);
+        context->init<float>(
+            value,
+            {0, 1,    2, 3,     4, 5,     6, 7,
+             8, 9,    10, 11,   12, 13,   14, 15,
+             16, 17,  18, 19,   20, 21,   22, 23},
+            Shape({3, 4, 2}));
+        auto output = FU<SliceAxis>(value, 1, 1, 1, false);
+        REQUIRE(output->shape().dims() == Shape({3, 2}).dims());
+        INFO("Checking forward propagation");
+        evaluate_and_check<float>(
+            output,
+            {2, 3,
+             10, 11,
+             18, 19},
+            Shape({3, 2}),
+            context);
+        INFO("Checking backward propagation");
         verify_derivatives<float>(context, {value}, output, 0.05);
     }
 }
@@ -343,4 +392,88 @@ TEST_CASE("Tiling") {
         auto output = FU<Tile>(value, std::vector<ShapeDim>({1, 2}));
         verify_derivatives<float>(context, {value}, output, 0.05);
     }
+}
+
+
+TEST_CASE("Expanding and squeezing dimensions") {
+    SECTION("ExpandDims") {
+        auto value = Variable::make("value", {2, 6}, ArrayType::float32);
+        auto output1 = FU<ExpandDims>(value, 1);
+        auto output2 = FU<ExpandDims>(value, -1);
+        REQUIRE(output1->shape() == Shape({2, 1, 6}));
+        REQUIRE(output2->shape().dims() == Shape({2, 6, 1}).dims());
+        auto context = Context::make_for_device(0);
+        context->init<float>(
+            value,
+            {0, 1, 2, 0, 1, 2,
+             3, 4, 5, 3, 4, 5},
+            Shape({2, 6}));
+        evaluate_and_check<float>(
+            output1,
+            {0, 1, 2, 0, 1, 2,
+             3, 4, 5, 3, 4, 5},
+            Shape({2, 1, 6}),
+            context);
+        evaluate_and_check<float>(
+            output2,
+            {0, 1, 2, 0, 1, 2,
+             3, 4, 5, 3, 4, 5},
+            Shape({2, 6, 1}),
+            context);
+        verify_derivatives<float>(context, {value}, output1, 0.05);
+        verify_derivatives<float>(context, {value}, output2, 0.05);
+    }
+
+    SECTION("Squeeze") {
+        auto value = Variable::make("value", {2, 1, 6}, ArrayType::float32);
+        auto output = FU<Squeeze>(value, 1);
+        REQUIRE(output->shape() == Shape({2, 6}));
+        auto context = Context::make_for_device(0);
+        context->init<float>(
+            value,
+            {0, 1, 2, 0, 1, 2,
+             3, 4, 5, 3, 4, 5},
+            Shape({2, 1, 6}));
+        evaluate_and_check<float>(
+            output,
+            {0, 1, 2, 0, 1, 2,
+             3, 4, 5, 3, 4, 5},
+            Shape({2, 6}),
+            context);
+        verify_derivatives<float>(context, {value}, output, 0.05);
+    }
+}
+
+TEST_CASE("Test stacking nodes") {
+    auto val1 = Constant::ones(Shape({4, 3}), ArrayType::float32);
+    auto val2 = Constant::zeros(Shape({4, 3}), ArrayType::float32);
+    auto output = stack_nodes({val1, val2}, 1);
+    evaluate_and_check<float>(
+        output,
+        {1, 1, 1, 0, 0, 0,
+         1, 1, 1, 0, 0, 0,
+         1, 1, 1, 0, 0, 0,
+         1, 1, 1, 0, 0, 0},
+        Shape({4, 2, 3}));
+}
+
+TEST_CASE("Reshaping one node to be like another one") {
+    auto value1 = Variable::make("value1", {2, 3}, ArrayType::float32);
+    auto value2 = Variable::make("value2", {3, 2}, ArrayType::float32);
+    auto context = Context::make_for_device(0);
+    context->init<float>(
+        value1,
+        {0, 1, 2, 3, 4, 5},
+        Shape({2, 3}));
+    context->init<float>(
+        value2,
+        {10, 11, 12, 13, 14, 15},
+        Shape({3, 2}));
+    auto output = ReshapeLike::make(value1, value2);
+    evaluate_and_check<float>(
+        output,
+        {0, 1, 2, 3, 4, 5},
+        Shape({3, 2}),
+        context);
+    verify_derivatives<float>(context, {value1, value2}, output, 0.05);
 }

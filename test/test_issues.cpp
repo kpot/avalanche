@@ -8,7 +8,9 @@
 
 #include "avalanche/testing_tools.h"
 
-
 using namespace avalanche;
 
+TEST_CASE("Broken tests") {
+
+}
 

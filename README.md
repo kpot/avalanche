@@ -1,4 +1,4 @@
-Avalanche - OpenCL deep learning framework with Keras backend
+Avalanche - OpenCL deep learning framework with a backend for Keras
 ===================================================================
 *Avalanche* is a simple deep learning framework written in C++ and Python.
 Unlike the majority of the existing tools it is based on [OpenCL](https://en.wikipedia.org/wiki/OpenCL),

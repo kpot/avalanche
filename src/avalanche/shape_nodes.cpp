@@ -15,22 +15,6 @@ namespace avalanche {
 
 constexpr const std::size_t WORK_GROUP_SIZE = 64;
 
-const NodeRef ShapeOf::apply_chain_rule(const NodeRef &wrt_input,
-                                          const NodeRef &d_target_wrt_this,
-                                          const NodeRefList &all_inputs) const {
-    return nullptr;
-}
-
-MultiArrayRef ShapeOf::forward(const MultiArrayRef &value) const {
-    auto pool = value->buffer_unsafe()->pool();
-    auto array = pool->make_array(
-        Shape({static_cast<ShapeDim>(value->shape().rank())}),
-        dtype());
-    array->add_dependencies({value});
-    array->buffer_unsafe()->write_from_vector(value->shape().dims(), 0);
-    return array;
-}
-
 
 Reshape::Reshape(const NodeRef &input, const Shape &new_shape)
     :_new_shape{new_shape},
@@ -275,8 +259,9 @@ const NodeRef Concatenate::apply_chain_rule(const NodeRef &wrt_input,
 }
 
 SliceAxis::SliceAxis(const NodeRef &input, ShapeDim axis, ShapeDim range_start,
-                     ShapeDim range_end)
-    :_result_dtype{input->dtype()}
+                     ShapeDim range_end, bool keep_dims)
+    :_keep_dims{keep_dims},
+     _result_dtype{input->dtype()}
 {
     input->shape().normalize_range(axis, {range_start, range_end},
                                    _axis, _range);
@@ -285,6 +270,9 @@ SliceAxis::SliceAxis(const NodeRef &input, ShapeDim axis, ShapeDim range_start,
     if (result_shape_dims[_axis] != UnknownDim) {
         result_shape_dims[_axis] = _range.end - _range.start + 1;
     }
+    if (!_keep_dims && result_shape_dims[_axis] == 1) {
+        result_shape_dims.erase(result_shape_dims.begin() + _axis);
+    }
     _result_shape = Shape(result_shape_dims);
 }
 
@@ -292,8 +280,12 @@ MultiArrayRef SliceAxis::forward(const MultiArrayRef &value) const {
     ShapeDim real_axis;
     Range real_range;
     value->shape().normalize_range(_axis, _range, real_axis, real_range);
-    auto result_shape_dims = value->shape().dims();
-    result_shape_dims[real_axis] = real_range.end - real_range.start + 1;
+    auto result_shape_dims_kept = value->shape().dims();
+    result_shape_dims_kept[real_axis] = real_range.end - real_range.start + 1;
+    auto result_shape_dims_cut = result_shape_dims_kept;
+    if (!_keep_dims && result_shape_dims_kept[_axis] == 1) {
+        result_shape_dims_cut.erase(result_shape_dims_cut.begin() + _axis);
+    }
     cl::size_type inner_block_size = static_cast<cl::size_type>(
         Shape::dims_product(
             value->shape().dims(), real_axis + 1,
@@ -303,7 +295,7 @@ MultiArrayRef SliceAxis::forward(const MultiArrayRef &value) const {
         // and return a new array linked to the same buffer with the offset
         return MultiArray::from_buffer(
             value->buffer_unsafe(),
-            Shape(result_shape_dims),
+            Shape(result_shape_dims_kept),
             value->dtype(),
             value->buffer_offset() + real_range.start * inner_block_size);
     } else {
@@ -312,16 +304,21 @@ MultiArrayRef SliceAxis::forward(const MultiArrayRef &value) const {
             Shape::dims_product(value->shape().dims(), 0, real_axis - 1));
         auto elem_size = array_type_size(value->dtype());
         auto pool = value->buffer_unsafe()->pool();
-        auto result = pool->make_array(Shape(result_shape_dims), dtype());
+        auto result = pool->make_array(Shape(result_shape_dims_cut), dtype());
         result->add_dependencies({value});
 
-        cl::array<cl::size_type, 3> src_origin({(value->buffer_offset() + real_range.start * inner_block_size) * elem_size, 0, 0});
+        cl::array<cl::size_type, 3> src_origin(
+            {(value->buffer_offset() + real_range.start * inner_block_size)
+             * elem_size,
+             0, 0});
         cl::array<cl::size_type, 3> dst_origin({0, 0, 0});
 
-        cl::size_type copied_block_size = result_shape_dims[real_axis] * inner_block_size;
-
-        cl::array<cl::size_type, 3> region({copied_block_size * elem_size, num_outer_blocks, 1});
-        std::vector<cl::Event> events_to_wait({value->buffer_unsafe()->completion_event()});
+        cl::size_type copied_block_size =
+            result_shape_dims_kept[real_axis] * inner_block_size;
+        cl::array<cl::size_type, 3> region({copied_block_size * elem_size,
+                                            num_outer_blocks, 1});
+        std::vector<cl::Event> events_to_wait(
+            {value->buffer_unsafe()->completion_event()});
         cl::Event ready_event;
         pool->cl_queue().enqueueCopyBufferRect(
             value->cl_buffer_unsafe(),
@@ -341,14 +338,15 @@ MultiArrayRef SliceAxis::forward(const MultiArrayRef &value) const {
 }
 
 std::string SliceAxis::rh_name() const {
-    return fmt::format(", axis={}, start={}, end={})",
-                       _axis, _range.start, _range.end);
+    return fmt::format(", axis={}, start={}, end={}, keep_dims={})",
+                       _axis, _range.start, _range.end, _keep_dims);
 }
 
 const NodeRef SliceAxis::apply_chain_rule(const NodeRef &wrt_input,
                                           const NodeRef &d_target_wrt_this,
                                           const NodeRefList &all_inputs) const {
-    return F<ProjectOnto>(d_target_wrt_this,
+    auto d_target = _keep_dims ? d_target_wrt_this : FU<ExpandDims>(d_target_wrt_this, _axis);
+    return F<ProjectOnto>(d_target,
                           F<NoBackProp>(Constant::zeros_like(wrt_input)),
                           _axis, _range.start);
 }
@@ -457,7 +455,10 @@ MultiArrayRef ProjectOnto::forward(const MultiArrayRef &left,
     // First we need to copy the right buffer into the result
     cl::Event right_is_copied;
     std::vector<cl::Event> events_to_wait({right->buffer_unsafe()->completion_event()});
-    pool->cl_queue().enqueueCopyBuffer(right->cl_buffer_unsafe(), result->cl_buffer_unsafe(), left->buffer_offset() * elem_size, 0, left->size() * elem_size, &events_to_wait, &right_is_copied);
+    pool->cl_queue().enqueueCopyBuffer(
+        right->cl_buffer_unsafe(), result->cl_buffer_unsafe(),
+        right->buffer_offset() * elem_size, 0, right->size() * elem_size,
+        &events_to_wait, &right_is_copied);
     events_to_wait.clear();
 
     // Now we need to copy the left buffer into the result as soon as the
@@ -782,4 +783,182 @@ const NodeRef NoBackProp::apply_chain_rule(const NodeRef &wrt_input,
                                            const NodeRefList &all_inputs) const {
     return Constant::zeros_like(wrt_input);
 }
+
+ShapeOf::ShapeOf(const NodeRef &input)
+    :Constant(
+    "Shape of " + input->repr(),
+    Initializer{
+        [input](Context &context, ExecutionCache &cache) {
+            auto value = input->eval(context, cache);
+            auto pool = value->buffer_unsafe()->pool();
+            auto array = pool->make_array(
+                Shape({static_cast<ShapeDim>(value->shape().rank())}),
+                ShapeOf::DType);
+            array->add_dependencies({value});
+            array->buffer_unsafe()->write_from_vector(
+                value->shape().dims(), 0);
+            // we preserve the shape inside the host memory
+            // to simplify further cache checking
+            array->write_metadata(value->shape().dims());
+            return array;
+        },
+        [](const MultiArrayRef &cached_value,
+           const ArrayRefList &dependencies) {
+            // comparing cached value agains the current shape
+            auto dims_from_metadata = extract_shape_from_metadata(cached_value);
+            return dims_from_metadata == dependencies[0]->shape().dims();
+        },
+        DType
+    },
+    {static_cast<ShapeDim>(input->shape().rank())},
+    DType,
+    {F<NoBackProp>(input)})
+{
+}
+
+std::vector<ShapeDim> ShapeOf::extract_shape_from_metadata(
+        const MultiArrayRef &cached_value) {
+    std::vector<ShapeDim> dims_from_metadata;
+    cached_value->read_metadata(dims_from_metadata);
+    return dims_from_metadata;
+}
+
+ExpandDims::ExpandDims(const NodeRef &input, ShapeDim axis)
+    :_result_dtype{input->dtype()}
+{
+    _axis = normalize_axis(input->shape(), axis);
+    auto result_shape_dims = input->shape().dims();
+    result_shape_dims.insert(result_shape_dims.begin() + _axis, 1);
+    _result_shape = Shape(result_shape_dims);
+}
+
+std::string ExpandDims::rh_name() const {
+    return fmt::format(", axis={})", _axis);
+}
+
+MultiArrayRef ExpandDims::forward(const MultiArrayRef &value) const {
+    auto result_shape_dims = value->shape().dims();
+    result_shape_dims.insert(result_shape_dims.begin() + _axis, 1);
+    return value->reshape(result_shape_dims);
+}
+
+const NodeRef ExpandDims::apply_chain_rule(const NodeRef &wrt_input,
+                                           const NodeRef &d_target_wrt_this,
+                                           const NodeRefList &all_inputs) const {
+    return FU<Squeeze>(d_target_wrt_this, _axis);
+}
+
+ShapeDim ExpandDims::normalize_axis(const Shape &shape, ShapeDim axis) {
+    ShapeDim result = (axis < 0) ? static_cast<ShapeDim>(shape.rank()) + axis + 1 : axis;
+    if (result < 0 || result > shape.rank()) {
+        throw std::invalid_argument(
+            fmt::format(
+                "It is impossible to insert a dimension with index {} "
+                "into the shape {}",
+                axis, shape.to_string()));
+    }
+    return result;
+}
+
+
+Squeeze::Squeeze(const NodeRef &input, ShapeDim axis)
+    :_result_dtype{input->dtype()}
+{
+    _axis = static_cast<ShapeDim>(input->shape().dim_real_index(axis));
+    if (_axis < 0 || _axis > input->shape().rank() - 1) {
+        throw std::invalid_argument(
+            fmt::format(
+                "It is impossible to remove the dimension with index {} "
+                "from the node {}", axis, input->repr()));
+    }
+    auto result_shape_dims = input->shape().dims();
+    if (result_shape_dims[_axis] != UnknownDim
+            && result_shape_dims[_axis] != 1) {
+        throw std::invalid_argument(
+            fmt::format(
+                "It is impossible to remove the dimension with index {} from "
+                "the node {} because the dimension's size is greater than 1",
+                axis, input->repr()));
+    }
+    result_shape_dims.erase(result_shape_dims.begin() + _axis);
+    _result_shape = Shape(result_shape_dims);
+}
+
+std::string Squeeze::rh_name() const {
+    return fmt::format(", axis={})", _axis);
+}
+
+MultiArrayRef Squeeze::forward(const MultiArrayRef &value) const {
+    auto result_shape_dims = value->shape().dims();
+    if (result_shape_dims[_axis] != 1) {
+        throw std::invalid_argument("Cannot remove a dimension of a size > 1");
+    }
+    result_shape_dims.erase(result_shape_dims.begin() + _axis);
+    return value->reshape(result_shape_dims);
+}
+
+const NodeRef Squeeze::apply_chain_rule(const NodeRef &wrt_input,
+                                        const NodeRef &d_target_wrt_this,
+                                        const NodeRefList &all_inputs) const {
+    return FU<ExpandDims>(d_target_wrt_this, _axis);
+}
+
+NodeRef stack_nodes(const NodeRefList &nodes, ShapeDim axis) {
+    NodeRefList reshaped_nodes;
+    for (auto const &node: nodes) {
+        reshaped_nodes.push_back(FU<ExpandDims>(node, axis));
+    }
+    return Concatenate::make(reshaped_nodes, axis);
+}
+
+ReshapeLike::ReshapeLike(const NodeRef &input, const NodeRef &like_node)
+:_input{input}, _shape_node{ShapeOf::make(like_node)}
+{
+    set_dtype(input->dtype());
+    set_shape(like_node->shape());
+}
+
+const NodeRef ReshapeLike::apply_chain_rule(const NodeRef &wrt_input,
+                                            const NodeRef &d_target_wrt_this,
+                                            const NodeRefList &all_inputs) const {
+    if (wrt_input == all_inputs[0]) {
+        return ReshapeLike::make(d_target_wrt_this, wrt_input);
+    } else if (wrt_input == all_inputs[1]) {
+        // Normally this branch should not be calculated, because
+        // it doesn't make practical sense
+        return Constant::zeros_like(wrt_input);
+    } else {
+        throw std::logic_error(messages::CANT_DIFF_UNEXISTING_INPUT_MESSAGE);
+    }
+}
+
+NodeRefList ReshapeLike::inputs() const {
+    return avalanche::NodeRefList({_input, _shape_node});
+}
+
+MultiArrayRef ReshapeLike::eval(Context &context, ExecutionCache &cache) const {
+    MultiArrayRef result;
+    if (!cache.get(id, result)) {
+        auto input_value = _input->eval(context, cache);
+        auto shape_value = _shape_node->eval(context, cache);
+        auto shape_dims = ShapeOf::extract_shape_from_metadata(shape_value);
+        auto shape_is_different = input_value->shape().dims() != shape_dims;
+        result = shape_is_different ? input_value->reshape(shape_dims)
+                                    : input_value;
+        cache.put(id, result);
+    }
+    return result;
+}
+
+std::string ReshapeLike::to_string() const {
+    return fmt::format("({} ReshapeLike {})",
+                       _input->to_string(), _shape_node->to_string());
+}
+
+NodeRef ReshapeLike::make(const NodeRef &input, const NodeRef &like_node) {
+    auto *raw_ptr = new ReshapeLike(input, like_node);
+    return std::static_pointer_cast<BaseNode>(
+        std::shared_ptr<ReshapeLike>(raw_ptr));
+}
+
 } // namespace

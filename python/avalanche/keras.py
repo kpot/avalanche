@@ -915,6 +915,33 @@ def zeros_like(x, dtype=None, name=None):
     return av.consts.zeros_like_with_type(x, avalanche_dtype(dtype))
 
 
+def ones_like(x, dtype=None, name=None):
+    """Instantiates an all-ones variable of the same shape as another tensor.
+
+    # Arguments
+        x: Keras variable or tensor.
+        dtype: String, dtype of returned Keras variable.
+             None uses the dtype of x.
+        name: String, name for the variable to create.
+
+    # Returns
+        A Keras variable with the shape of x filled with ones.
+
+    # Example
+    ```python
+        >>> from keras import backend as K
+        >>> kvar = K.variable(np.random.random((2,3)))
+        >>> kvar_ones = K.ones_like(kvar)
+        >>> K.eval(kvar_ones)
+        array([[ 1.,  1.,  1.],
+               [ 1.,  1.,  1.]], dtype=float32)
+    ```
+    """
+    if dtype is None:
+        dtype = floatx()
+    return av.consts.ones_like_with_type(x, avalanche_dtype(dtype))
+
+
 def ones(shape, dtype=None, name=None):
     """Instantiates an all-ones variable and returns it.
 
@@ -975,6 +1002,32 @@ def concatenate(tensors, axis=-1):
     return av.ops.concatenate(tensors, axis)
 
 
+def _stack_list_of_nodes(nodes):
+    if isinstance(nodes, (list, tuple)):
+        if not nodes:
+            raise ValueError('empty list')
+        values = (
+            [_stack_list_of_nodes(n) for n in nodes]
+            if isinstance(nodes[0], (list, tuple))
+            else nodes)
+        return stack(values)
+    else:
+        return nodes
+
+
+def stack(x, axis=0):
+    """Stacks a list of rank `R` tensors into a rank `R+1` tensor.
+
+    # Arguments
+        x: List of tensors.
+        axis: Axis along which to perform stacking.
+
+    # Returns
+        A tensor.
+    """
+    return av.ops.stack(x, axis)
+
+
 def sum(x, axis=None, keepdims=False):
     """Sum of the values in a tensor, alongside the specified axis.
 
@@ -991,7 +1044,26 @@ def sum(x, axis=None, keepdims=False):
     """
     if axis is None:
         axis = []
-    return av.ops.reduce_sum(x, axis, keepdims)
+    return av.ops.reduce_sum(_stack_list_of_nodes(x), axis, keepdims)
+
+
+def prod(x, axis=None, keepdims=False):
+    """Multiplies the values in a tensor, alongside the specified axis.
+
+    # Arguments
+        x: A tensor or variable.
+        axis: An integer, the axis to compute the product.
+        keepdims: A boolean, whether to keep the dimensions or not.
+            If `keepdims` is `False`, the rank of the tensor is reduced
+            by 1. If `keepdims` is `True`,
+            the reduced dimension is retained with length 1.
+
+    # Returns
+        A tensor with the product of elements of `x`.
+    """
+    if axis is None:
+        axis = []
+    return av.ops.reduce_prod(_stack_list_of_nodes(x), axis, keepdims)
 
 
 def expand_dims(x, axis=-1):
@@ -1004,10 +1076,20 @@ def expand_dims(x, axis=-1):
     # Returns
         A tensor with expanded dimensions.
     """
-    shape = list(int_shape(x))
-    shape = shape[:-axis] + [1] + shape[-axis:]
+    return av.ops.expand_dims(x, axis)
 
-    return av.ops.reshape(x, av.Shape(keras_shape_to_avalanche(shape)))
+
+def squeeze(x, axis):
+    """Removes a 1-dimension from the tensor at index "axis".
+
+    # Arguments
+        x: A tensor or variable.
+        axis: Axis to drop.
+
+    # Returns
+        A tensor with the same data as `x` but reduced dimensions.
+    """
+    return av.ops.squeeze(x, axis)
 
 
 def tile(x, n):
@@ -1024,3 +1106,90 @@ def tile(x, n):
     if isinstance(n, int):
         n = [n]
     return av.ops.tile(x, n)
+
+
+def batch_normalization(x, mean, var, beta, gamma, axis=-1, epsilon=1e-3):
+    """Applies batch normalization on x given mean, var, beta and gamma.
+
+    I.e. returns:
+    `output = (x - mean) / (sqrt(var) + epsilon) * gamma + beta`
+
+    # Arguments
+        x: Input tensor or variable.
+        mean: Mean of batch.
+        var: Variance of batch.
+        beta: Tensor with which to center the input.
+        gamma: Tensor by which to scale the input.
+        axis: Integer, the axis that should be normalized.
+            (typically the features axis).
+        epsilon: Fuzz factor.
+
+    # Returns
+        A tensor.
+    """
+    return gamma * (x - mean) / (av.ops.sqrt(var) + epsilon) + beta
+
+
+def normalize_batch_in_training(x, gamma, beta,
+                                reduction_axes, epsilon=1e-3):
+    """
+    Computes mean and std for batch then apply batch_normalization on batch.
+
+
+    # Arguments
+        x: Input tensor or variable.
+        gamma: Tensor by which to scale the input.
+        beta: Tensor with which to center the input.
+        reduction_axes: iterable of integers,
+            axes over which to normalize.
+        epsilon: Fuzz factor.
+
+    # Returns
+        A tuple length of 3, `(normalized_tensor, mean, variance)`.
+    """
+    if gamma is None:
+        gamma = ones_like(x)
+    if beta is None:
+        beta = zeros_like(x)
+    mean = av.ops.reduce_mean(x, reduction_axes, True)
+    variance = av.ops.reduce_mean(av.ops.square(x - mean), reduction_axes, True)
+    normalized_tensor = batch_normalization(
+        x, mean, variance, beta, gamma, axis=reduction_axes, epsilon=epsilon)
+    return normalized_tensor, mean, variance
+
+
+def shape(x):
+    """Returns the symbolic shape of a tensor or variable.
+
+    # Arguments
+        x: A tensor or variable.
+
+    # Returns
+        A symbolic shape (which is itself a tensor).
+
+    # Examples
+    ```python
+        # TensorFlow example
+        >>> from keras import backend as K
+        >>> tf_session = K.get_session()
+        >>> val = np.array([[1, 2], [3, 4]])
+        >>> kvar = K.variable(value=val)
+        >>> inputs = keras.backend.placeholder(shape=(2, 4, 5))
+        >>> K.shape(kvar)
+        <tf.Tensor 'Shape_8:0' shape=(2,) dtype=int32>
+        >>> K.shape(inputs)
+        <tf.Tensor 'Shape_9:0' shape=(3,) dtype=int32>
+        # To get integer shape (Instead, you can use K.int_shape(x))
+        >>> K.shape(kvar).eval(session=tf_session)
+        array([2, 2], dtype=int32)
+        >>> K.shape(inputs).eval(session=tf_session)
+        array([2, 4, 5], dtype=int32)
+    ```
+    """
+    return av.ops.shape(x)
+
+
+def moving_average_update(variable, value, momentum):
+    if value.shape.rank != variable.shape.rank:
+        value = av.ops.reshape_like(value, variable)
+    return update(variable, variable * momentum + value * (1. - momentum))

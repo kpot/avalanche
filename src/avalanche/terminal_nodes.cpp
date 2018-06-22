@@ -8,6 +8,7 @@
 #include "avalanche/macroses.h"
 #include "avalanche/casting.h"
 #include "avalanche/logging.h"
+#include "avalanche/shape_nodes.h"
 
 #include "avalanche/terminal_nodes.h"
 
@@ -130,11 +131,11 @@ Constant::tensor(const std::string &name,
 const NodeRef Constant::fill_shape(const avalanche::NodeRef &shape_node,
                                    ArrayType dtype,
                                    float value) {
-    if (shape_node->dtype() != ShapeOf::dtype()) {
+    if (shape_node->dtype() != ShapeOf::DType) {
         throw std::invalid_argument(
             fmt::format("Given node has data type {} while {} is required",
                         array_type_name(shape_node->dtype()),
-                        array_type_name(ShapeOf::dtype())));
+                        array_type_name(ShapeOf::DType)));
     }
     if (shape_node->shape().rank() > 1) {
         throw std::invalid_argument(
@@ -209,6 +210,11 @@ Constant::fill_like_with_type(const NodeRef &other_node, ArrayType dtype,
 const NodeRef
 Constant::zeros_like_with_type(const NodeRef &other_node, ArrayType dtype) {
     return fill_like_with_type(other_node, dtype, 0.0);
+}
+
+const NodeRef
+Constant::ones_like_with_type(const NodeRef &other_node, ArrayType dtype) {
+    return fill_like_with_type(other_node, dtype, 1.0);
 }
 
 MultiArrayRef Variable::eval(Context &context, ExecutionCache &cache) const {

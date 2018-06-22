@@ -240,7 +240,7 @@ Shape::dims_difference(const Shape &aligned_shape, const Shape &result_shape) {
 void Shape::normalize_range(const ShapeDim axis, const Range &range,
                             ShapeDim &real_axis, Range &real_range) const {
     real_axis = static_cast<ShapeDim>(dim_real_index(axis));
-    if (real_axis >= rank()) {
+    if (real_axis >= rank() || real_axis < 0) {
         throw std::invalid_argument(
             fmt::format(
                 "Cannot slice along given axis {} because it "

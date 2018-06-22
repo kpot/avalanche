@@ -41,7 +41,7 @@ void evaluate_and_check(const NodeRef &output,
     std::vector<T> cpu_copy;
     results[0]->fetch_data_into(cpu_copy);
     require_almost_equal(expected, cpu_copy, 1e-6);
-    REQUIRE(results[0]->shape() == expected_shape);
+    REQUIRE(results[0]->shape().dims() == expected_shape.dims());
 }
 
 template <typename T>
