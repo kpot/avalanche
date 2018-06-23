@@ -64,6 +64,7 @@ add_library(avalanche
         src/avalanche/casting.cpp
         src/avalanche/random_nodes.cpp
         src/avalanche/shape_nodes.cpp
+        src/avalanche/conditional_nodes.cpp
         src/avalanche/math_ops/BroadcastedBinaryOp.cpp
         src/avalanche/math_ops/simple_arithemic.cpp
         src/avalanche/math_ops/MatMul.cpp

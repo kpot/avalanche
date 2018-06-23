@@ -1,6 +1,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/numpy.h>
+#include <pybind11/functional.h>
 #include <Python.h>
 
 #include "avalanche/terminal_nodes.h"
@@ -481,6 +482,10 @@ PYBIND11_MODULE(pyvalanche, m) {
         .def("shape", &ShapeOf::make)
         .def("expand_dims", &FU<ExpandDims, ShapeDim>)
         .def("squeeze", &FU<Squeeze, ShapeDim>)
+        .def("cond", py::overload_cast<const NodeRef&, CondExpression, CondExpression>(&Cond::make))
+        .def("cond", py::overload_cast<const NodeRef&, const NodeRef&, const NodeRef&>(&Cond::make))
+        .def("cond", py::overload_cast<const NodeRef&, CondExpression, const NodeRef&>(&Cond::make))
+        .def("cond", py::overload_cast<const NodeRef&, const NodeRef&, CondExpression>(&Cond::make))
         .def("tile", &FU<Tile, const std::vector<ShapeDim>&>)
         .def("concatenate", &Concatenate::make)
         .def("stack", &stack_nodes)

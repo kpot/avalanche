@@ -35,6 +35,12 @@ public:
 
     template <typename T>
     MultiArrayRef init(const NodeRef &node,
+                       const std::vector<T> &data) {
+        return init(node, data, node->shape());
+    }
+
+    template <typename T>
+    MultiArrayRef init(const NodeRef &node,
                        const std::vector<T> &data,
                        const Shape &shape) {
         // Note: having shape as an argument is necessary since the node

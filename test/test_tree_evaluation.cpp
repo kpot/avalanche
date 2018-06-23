@@ -8,6 +8,7 @@
 #include "avalanche/terminal_nodes.h"
 #include "avalanche/nodes.h"
 #include "avalanche/Executor.h"
+#include "avalanche/testing_tools.h"
 
 using namespace avalanche;
 
@@ -124,4 +125,34 @@ TEST_CASE("Initializing variables with incompletely defined shapes") {
     REQUIRE(context->get(var1->id, value));
     REQUIRE(value->shape().is_complete());
     REQUIRE(value->shape().agrees_with(var1->shape()));
+}
+
+TEST_CASE("Conditional evaluation") {
+    // One of two variables should get incremented at a time depending
+    // on a state of a third boolean variable, determining which one
+    // of the two it will be
+    auto var1 = Variable::make("var1", {}, ArrayType::float32);
+    auto var2 = Variable::make("var2", {}, ArrayType::float32);
+    auto condition = Variable::make("condition", {}, ArrayType::int8);
+    auto context = Context::make_for_device(0);
+    context->init<float>(var1, {0});
+    context->init<float>(var2, {0});
+    auto one = Constant::scalar<float>(1);
+    auto update1 = F<UpdateAdd>(var1, one);
+    auto update2 = F<UpdateAdd>(var2, one);
+    auto output = Cond::make(condition, update1, update2);
+    // Only var2 should be incremented, because condition == 0
+    context->init<std::int8_t>(condition, {0});
+    evaluate_and_check<float>(output, {1}, Shape(), context);
+    evaluate_and_check<float>(var1, {0}, Shape(), context);
+    evaluate_and_check<float>(var2, {1}, Shape(), context);
+    // Now only var1 should be incremented, because condition == 1
+    context->init<std::int8_t>(condition, {1});
+    evaluate_and_check<float>(output, {1}, Shape(), context);
+    evaluate_and_check<float>(var1, {1}, Shape(), context);
+    evaluate_and_check<float>(var2, {1}, Shape(), context);
+    // Again only var1 should be incremented, because condition is still == 1
+    evaluate_and_check<float>(output, {2}, Shape(), context);
+    evaluate_and_check<float>(var1, {2}, Shape(), context);
+    evaluate_and_check<float>(var2, {1}, Shape(), context);
 }

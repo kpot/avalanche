@@ -10,7 +10,7 @@ void Context::init(const NodeRef &node,
     if (array->dtype() != node->dtype()) {
         throw std::invalid_argument(
             "Given MultiArray instance has different "
-            "data type that of the node.");
+            "data type thant that of the node.");
     }
     check_data_shape_compatibility(array->shape(), node->shape());
     init(node->id, array);

@@ -4,6 +4,7 @@
 #include "avalanche/BaseNode.h"
 #include "avalanche/base_ops_nodes.h"
 #include "avalanche/shape_nodes.h"
+#include "avalanche/conditional_nodes.h"
 #include "avalanche/terminal_nodes.h"
 #include "avalanche/math_ops/simple_arithemic.h"
 #include "avalanche/math_ops/comparisons.h"

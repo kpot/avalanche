@@ -10,6 +10,7 @@ _thread_local = threading.local()
 _contexts = {}
 _contexts_lock = threading.Lock()
 _uid_prefixes = collections.defaultdict(int)
+_learning_phase_var = None
 
 
 _IMAGE_DATA_FORMAT = 'channels_last'
@@ -1193,3 +1194,105 @@ def moving_average_update(variable, value, momentum):
     if value.shape.rank != variable.shape.rank:
         value = av.ops.reshape_like(value, variable)
     return update(variable, variable * momentum + value * (1. - momentum))
+
+
+def in_train_phase(x, alt, training=None):
+    """Selects `x` in train phase, and `alt` otherwise.
+
+    Note that `alt` should have the *same shape* as `x`.
+
+    # Arguments
+        x: What to return in train phase
+            (tensor or callable that returns a tensor).
+        alt: What to return otherwise
+            (tensor or callable that returns a tensor).
+        training: Optional scalar tensor
+            (or Python boolean, or Python integer)
+            specifying the learning phase.
+
+    # Returns
+        Either `x` or `alt` based on the `training` flag.
+        the `training` flag defaults to `K.learning_phase()`.
+    """
+    if training is None:
+        training = learning_phase()
+        uses_learning_phase = True
+    else:
+        uses_learning_phase = False
+
+    if training is 1 or training is True:
+        if callable(x):
+            return x()
+        else:
+            return x
+
+    elif training is 0 or training is False:
+        if callable(alt):
+            return alt()
+        else:
+            return alt
+
+    # else: assume learning phase is a placeholder tensor.
+    x = switch(training, x, alt)
+    if uses_learning_phase:
+        x._uses_learning_phase = True
+    return x
+
+
+def switch(condition, then_expression, else_expression):
+    """Switches between two operations depending on a scalar value.
+
+    Note that both `then_expression` and `else_expression`
+    should be symbolic tensors of the *same shape*.
+
+    # Arguments
+        condition: tensor (`int` or `bool`).
+        then_expression: either a tensor, or a callable that returns a tensor.
+        else_expression: either a tensor, or a callable that returns a tensor.
+
+    # Returns
+        The selected tensor.
+
+    # Raises
+        ValueError: If rank of `condition` is greater than rank of expressions.
+    """
+    try:
+        return av.ops.cond(condition, then_expression, else_expression)
+    except TypeError as e:
+        import pdb; pdb.set_trace()
+        print(e)
+
+
+def learning_phase():
+    """Returns the learning phase flag.
+
+    The learning phase flag is a bool tensor (0 = test, 1 = train)
+    to be passed as input to any Keras function
+    that uses a different behavior at train time and test time.
+
+    # Returns
+        Learning phase (scalar integer tensor or Python integer).
+    """
+    global _learning_phase_var
+    if _learning_phase_var is None:
+        _learning_phase_var = av.variable(
+            'keras_learning_phase', [], av.ArrayType.int8,
+            av.value_initializer(np.array(0, dtype='int8')))
+    return _learning_phase_var
+
+
+def set_learning_phase(value):
+    """Sets the learning phase to a fixed value.
+
+    # Arguments
+        value: Learning phase value, either 0 or 1 (integers).
+
+    # Raises
+        ValueError: if `value` is neither `0` nor `1`.
+    """
+
+    global _learning_phase_var
+    if value not in {0, 1}:
+        raise ValueError('Expected learning phase to be '
+                         '0 or 1.')
+    _learning_phase_var = value

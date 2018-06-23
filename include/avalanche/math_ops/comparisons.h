@@ -7,6 +7,7 @@
 namespace avalanche {
 
 constexpr ArrayType BoolArrayType = ArrayType::int8;
+using BoolArrayStaticType = std::int8_t;
 
 class Comparison : public BroadcastedBinaryOp {
 public:
