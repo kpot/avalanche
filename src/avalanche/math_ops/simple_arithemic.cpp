@@ -25,7 +25,7 @@ const NodeRef Plus::apply_chain_rule(
     }
     // TODO: This can be made unnecessary
     if (derivative->shape() != wrt_input->shape()) {
-        derivative = FU<Reshape>(derivative, wrt_input->shape());
+        derivative = ReshapeLike::make(derivative, wrt_input);
     }
     return derivative;
 }
@@ -46,7 +46,7 @@ Minus::apply_chain_rule(const NodeRef &wrt_input,
         throw std::logic_error(messages::CANT_DIFF_UNEXISTING_INPUT_MESSAGE);
     }
     if (derivative->shape() != wrt_input->shape()) {
-        derivative = FU<Reshape>(derivative, wrt_input->shape());
+        derivative = ReshapeLike::make(derivative, wrt_input);
     }
     return derivative;
 }
@@ -68,7 +68,7 @@ const NodeRef Multiply::apply_chain_rule(const NodeRef &wrt_input,
         throw std::logic_error(messages::CANT_DIFF_UNEXISTING_INPUT_MESSAGE);
     }
     if (derivative->shape() != wrt_input->shape()) {
-        derivative = FU<Reshape>(derivative, wrt_input->shape());
+        derivative = ReshapeLike::make(derivative, wrt_input);
     }
     return derivative;
 }
@@ -92,7 +92,7 @@ const NodeRef Divide::apply_chain_rule(const NodeRef &wrt_input,
         throw std::logic_error(messages::CANT_DIFF_UNEXISTING_INPUT_MESSAGE);
     }
     if (derivative->shape() != wrt_input->shape()) {
-        derivative = FU<Reshape>(derivative, wrt_input->shape());
+        derivative = ReshapeLike::make(derivative, wrt_input);
     }
     return derivative;
 }
@@ -128,7 +128,7 @@ const NodeRef Power::apply_chain_rule(const NodeRef &wrt_input,
     }
     auto derivative = F<ReduceSum>(part_derivative, wrt_input, true);
     if (derivative->shape() != wrt_input->shape()) {
-        derivative = FU<Reshape>(derivative, wrt_input->shape());
+        derivative = ReshapeLike::make(derivative, wrt_input);
     }
     return derivative;
 }

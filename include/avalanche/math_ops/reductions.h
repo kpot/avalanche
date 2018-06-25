@@ -8,8 +8,47 @@
 #include "avalanche/Shape.h"
 #include "avalanche/BaseNode.h"
 #include "avalanche/math_ops/messages.h"
+#include "avalanche/shape_nodes.h"
 
 namespace avalanche {
+
+class ShapeDimsToOnes {
+public:
+    ShapeDimsToOnes(const NodeRef &shape_node, std::vector<ShapeDim> &dims_to_replace)
+    :_result_shape {shape_node->shape()}, _dims_to_replace{dims_to_replace}
+    {
+        if (shape_node->shape().rank() != 1 || shape_node->dtype() != ShapeOf::DType) {
+            throw std::invalid_argument(
+                "Node " + shape_node->repr() +
+                " doesn't look like a shape node.");
+        }
+    }
+
+    const Shape& shape() const { return _result_shape; }
+    ArrayType dtype() const { return ShapeOf::DType; }
+
+    bool use_in_back_propagation() const {
+        return false;
+    };
+
+    MultiArrayRef forward(const MultiArrayRef &value) const {
+        auto extracted_dims = ShapeOf::extract_shape_from_metadata(value);
+        auto extracted_shape = Shape(extracted_dims);
+        auto dims_to_replace = extracted_shape.normalize_dims(_dims_to_replace);
+        for (std::size_t i = 0; i < dims_to_replace.size(); ++i) {
+            extracted_dims[dims_to_replace[i]] = 1;
+        }
+        auto pool = value->buffer_unsafe()->pool();
+        auto result = pool->make_array(
+            Shape({static_cast<ShapeDim >(extracted_dims.size())}),
+            ShapeOf::DType);
+        return result;
+    }
+
+private:
+    Shape _result_shape;
+    std::vector<ShapeDim> _dims_to_replace;
+};
 
 
 class Reduction {
@@ -51,6 +90,8 @@ public:
     }
 
     bool use_in_back_propagation() const { return true; };
+
+    std::string repr_extra() const;
 
 protected:
     struct ReductionStep {

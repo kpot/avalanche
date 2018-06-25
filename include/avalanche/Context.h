@@ -67,7 +67,7 @@ public:
 
     bool get(NodeId node_id, MultiArrayRef &result) const;
 
-    // Works like get() but throws exception if node wasn't found
+    // Works like get() but throws exception if the node wasn't found
     MultiArrayRef eval(const NodeRef &node) const;
 
     BufferPoolRef device_pool() { return _buffer_pool; };

@@ -54,7 +54,7 @@ TEST_CASE("Checking broadcasting shapes") {
         auto aligned_shapes = Shape::align_for_broadcasting(shape1, shape2);
         REQUIRE(aligned_shapes[0] == Shape({1, -1, 5}));
         REQUIRE(aligned_shapes[1] == Shape({2, 3, 5}));
-        REQUIRE(aligned_shapes[2] == Shape({2, -1, 5}));
+        REQUIRE(aligned_shapes[2].agrees_with(Shape({2, -1, 5})));
     }
 
     SECTION("Not fully defined shapes #2") {
@@ -62,7 +62,7 @@ TEST_CASE("Checking broadcasting shapes") {
         auto aligned_shapes = Shape::align_for_broadcasting(shape1, shape2);
         REQUIRE(aligned_shapes[0] == Shape({1, -1, -1}));
         REQUIRE(aligned_shapes[1] == Shape({2, 3, 5}));
-        REQUIRE(aligned_shapes[2] == Shape({2, -1, -1}));
+        REQUIRE(aligned_shapes[2].agrees_with(Shape({2, -1, -1})));
     }
 
     SECTION("Not fully defined shapes #3") {
@@ -70,7 +70,7 @@ TEST_CASE("Checking broadcasting shapes") {
         auto aligned_shapes = Shape::align_for_broadcasting(shape1, shape2);
         REQUIRE(aligned_shapes[0].dims() == Shape({1, -1, 5}).dims());
         REQUIRE(aligned_shapes[1] == Shape({2, -1, -1}));
-        REQUIRE(aligned_shapes[2] == Shape({2, -1, -1}));
+        REQUIRE(aligned_shapes[2].agrees_with(Shape({2, -1, -1})));
     }
 
     SECTION("Not fully defined shapes #4") {
@@ -78,7 +78,7 @@ TEST_CASE("Checking broadcasting shapes") {
         auto aligned_shapes = Shape::align_for_broadcasting(shape1, shape2);
         REQUIRE(aligned_shapes[0].dims() == Shape({1, 2, 5}).dims());
         REQUIRE(aligned_shapes[1] == Shape({2, -1, 1}));
-        REQUIRE(aligned_shapes[2] == Shape({2, -1, 5}));
+        REQUIRE(aligned_shapes[2].agrees_with(Shape({2, -1, 5})));
     }
 }
 

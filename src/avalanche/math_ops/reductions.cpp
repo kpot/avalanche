@@ -102,9 +102,10 @@ Reduction::Reduction(const NodeRef &input,
      _to_be_like{to_be_like}
 {
     std::vector<ReductionStep> tmp_reduction_steps;
-    if (input->shape() == to_be_like->shape()) {
+    if (input->shape() == to_be_like->shape() || _dims_to_cut.empty()) {
         // Handles cases when the input already looks like the target
-        // and we need nothing to do
+        // or both shapes are already equivalent (like {5} and {1, 5})
+        // so and we need nothing to do
         _result_shape_dims_cut = to_be_like->shape();
         _result_shape_dims_kept = to_be_like->shape();
     } else {
@@ -124,7 +125,8 @@ std::vector<ShapeDim> Reduction::estimate_dims_to_cut(
     std::vector<ShapeDim> dims_to_cut;
     for (ShapeDim i = 0; i < input_shape_aligned.rank(); ++i) {
         if (input_shape_aligned.dim(i) != sample_shape_aligned.dim(i)
-                && sample_shape_aligned.dim(i) == 1) {
+                && (sample_shape_aligned.dim(i) == 1
+                    || sample_shape_aligned.dim(i) == UnknownDim)) {
             dims_to_cut.push_back(i);
         }
     }
@@ -218,6 +220,11 @@ MultiArrayRef Reduction::forward(const MultiArrayRef &value,
     }
     auto dims_to_cut = estimate_dims_to_cut(
         value->shape(), to_be_like_value->shape());
+    if (dims_to_cut.empty()) {
+        // Dimensions are already equivalent, like {5} and {1, 5}
+        // so we can do simple reshaping
+        return value->reshape(to_be_like_value->shape().dims());
+    }
     std::vector<ReductionStep> reduction_steps;
     Shape result_shape_dims_cut;
     Shape result_shape_dims_kept;
@@ -307,7 +314,7 @@ const NodeRef Reduction::apply_chain_rule(const NodeRef &wrt_input,
 
     if (all_inputs[0] == wrt_input) {
         return F<Multiply>(
-            FU<Reshape>(d_target_wrt_this, _result_shape_dims_kept),
+            ReshapeLike::make(d_target_wrt_this, wrt_input, _dims_to_cut),
             partial_derivative(wrt_input));
     } else {
         throw std::logic_error(messages::CANT_DIFF_UNEXISTING_INPUT_MESSAGE);
@@ -331,6 +338,11 @@ const std::string Reduction::get_kernel_name(bool is_partial_reduction) const {
 
 std::string Reduction::name() const {
     return fmt::format("reduce_{}_to_be_like", kernel_op_name());
+}
+
+std::string Reduction::repr_extra() const {
+    return fmt::format("along_axis: {}",
+                       Shape::dims_to_string(_dims_to_cut, false));
 }
 
 const NodeRef ReduceSum::partial_derivative(const NodeRef &input) const {

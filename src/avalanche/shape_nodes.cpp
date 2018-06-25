@@ -29,10 +29,10 @@ MultiArrayRef Reshape::forward(const MultiArrayRef &value) const {
 const NodeRef Reshape::apply_chain_rule(const NodeRef &wrt_input,
                                         const NodeRef &d_target_wrt_this,
                                         const NodeRefList &all_inputs) const {
-    return FU<Reshape>(
+    return ReshapeLike::make(
         F<Multiply>(d_target_wrt_this,
                     Constant::ones(_new_shape, _result_dtype)),
-        wrt_input->shape());
+        wrt_input);
 }
 
 MultiArrayRef ProductOfDims::forward(const MultiArrayRef &value) const {
@@ -240,7 +240,7 @@ std::string Concatenate::to_string() const {
 }
 
 std::string Concatenate::repr() const {
-    return format_repr("Concatenate", "");
+    return format_repr("Concatenate", "", fmt::format("axis: {}", _axis));
 }
 
 const NodeRef Concatenate::apply_chain_rule(const NodeRef &wrt_input,
@@ -912,10 +912,20 @@ NodeRef stack_nodes(const NodeRefList &nodes, ShapeDim axis) {
 }
 
 ReshapeLike::ReshapeLike(const NodeRef &input, const NodeRef &like_node)
-:_input{input}, _shape_node{ShapeOf::make(like_node)}
+:_input{input},
+ _shape_node{ShapeOf::make(like_node)},
+ _replace_dims_to_ones{false}
 {
     set_dtype(input->dtype());
     set_shape(like_node->shape());
+}
+
+ReshapeLike::ReshapeLike(const NodeRef &input, const NodeRef &like_node,
+                         const std::vector<ShapeDim> dims_to_ones)
+    :ReshapeLike(input, like_node)
+{
+    _replace_dims_to_ones = true;
+    _dims_to_ones = dims_to_ones;
 }
 
 const NodeRef ReshapeLike::apply_chain_rule(const NodeRef &wrt_input,
@@ -942,6 +952,23 @@ MultiArrayRef ReshapeLike::eval(Context &context, ExecutionCache &cache) const {
         auto input_value = _input->eval(context, cache);
         auto shape_value = _shape_node->eval(context, cache);
         auto shape_dims = ShapeOf::extract_shape_from_metadata(shape_value);
+
+        if (_replace_dims_to_ones) {
+            auto extracted_shape = Shape(shape_dims);
+            auto dims_to_replace = extracted_shape.normalize_dims(_dims_to_ones);
+            if (dims_to_replace.empty()) {
+                // This means all dimensions must be replaced
+                for (auto &d: shape_dims) {
+                    d = 1;
+                }
+            } else {
+                // only particular dimensions must be replaced
+                for (auto i: dims_to_replace) {
+                    shape_dims[i] = 1;
+                }
+            }
+        }
+
         auto shape_is_different = input_value->shape().dims() != shape_dims;
         result = shape_is_different ? input_value->reshape(shape_dims)
                                     : input_value;
@@ -959,6 +986,26 @@ NodeRef ReshapeLike::make(const NodeRef &input, const NodeRef &like_node) {
     auto *raw_ptr = new ReshapeLike(input, like_node);
     return std::static_pointer_cast<BaseNode>(
         std::shared_ptr<ReshapeLike>(raw_ptr));
+}
+
+NodeRef ReshapeLike::make(const NodeRef &input, const NodeRef &like_node,
+                          const std::vector<ShapeDim> &dims_to_ones) {
+    auto *raw_ptr = new ReshapeLike(input, like_node, dims_to_ones);
+    return std::static_pointer_cast<BaseNode>(
+        std::shared_ptr<ReshapeLike>(raw_ptr));
+}
+
+std::string ReshapeLike::repr() const {
+    std::string extra;
+    if (_replace_dims_to_ones) {
+        extra = fmt::format(
+            "like: {}, dims_to_ones: {}",
+            _shape_node->to_string(),
+            Shape::dims_to_string(_dims_to_ones));
+    } else {
+        extra = fmt::format("like: {}", _shape_node->to_string());
+    }
+    return format_repr("ReshapeLike", "", extra);
 }
 
 } // namespace

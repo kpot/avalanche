@@ -68,7 +68,10 @@ public:
     const Shape& shape() const { return _shape; }
     ArrayType dtype() const { return _dtype; }
     std::string format_repr(const std::string &operation,
-                            const std::string &name) const;
+                            const std::string &name,
+                            const std::string &extra) const;
+
+    std::string tree_repr();
 
 private:
     Shape _shape;
@@ -80,6 +83,8 @@ private:
         std::lock_guard <std::mutex> lock(mutex);
         return counter++;
     }
+
+    void _tree_repr_body(int depth, std::ostringstream &out);
 
 protected:
     void set_shape(const Shape &shape) { _shape = shape; }

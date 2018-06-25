@@ -17,7 +17,7 @@ public:
     NodeRefList inputs() const override;
 
     std::string repr() const override {
-        return format_repr("ReshapeLike", "");
+        return format_repr("Cond", "", "");
     }
 
     const NodeRef apply_chain_rule(

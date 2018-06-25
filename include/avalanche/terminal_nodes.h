@@ -103,7 +103,7 @@ public:
     }
 
     std::string repr() const override {
-        return format_repr("Variable", name);
+        return format_repr("Variable", name, "");
     }
 
     NodeRefList inputs() const override {
@@ -158,7 +158,7 @@ public:
     }
 
     std::string repr() const override {
-        return format_repr("Constant", _name);
+        return format_repr("Constant", _name, "");
     }
 
     NodeRefList inputs() const override {

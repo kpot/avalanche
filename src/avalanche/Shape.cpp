@@ -130,10 +130,11 @@ void Shape::align_for_broadcasting(const Shape &shape1, const Shape &shape2,
                 fmt::format("Cannot align shapes {} and {} for broadcasting",
                             shape1.to_string(), shape2.to_string()));
         }
-        if (*s1 == UnknownDim || *s2 == UnknownDim) {
-            *res = UnknownDim;
+
+        if (*s1 == UnknownDim) {
+            *res = (*s2 == UnknownDim) ? UnknownDim : *s2;
         } else {
-            *res = std::max(*s1, *s2);
+            *res = (*s2 == UnknownDim) ? *s1 : std::max(*s1, *s2);
         }
     }
 };

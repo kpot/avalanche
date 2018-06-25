@@ -1128,7 +1128,7 @@ def batch_normalization(x, mean, var, beta, gamma, axis=-1, epsilon=1e-3):
     # Returns
         A tensor.
     """
-    return gamma * (x - mean) / (av.ops.sqrt(var) + epsilon) + beta
+    return (x - mean) / av.ops.sqrt(var + epsilon) * gamma + beta
 
 
 def normalize_batch_in_training(x, gamma, beta,
@@ -1256,11 +1256,7 @@ def switch(condition, then_expression, else_expression):
     # Raises
         ValueError: If rank of `condition` is greater than rank of expressions.
     """
-    try:
-        return av.ops.cond(condition, then_expression, else_expression)
-    except TypeError as e:
-        import pdb; pdb.set_trace()
-        print(e)
+    return av.ops.cond(condition, then_expression, else_expression)
 
 
 def learning_phase():
@@ -1290,9 +1286,29 @@ def set_learning_phase(value):
     # Raises
         ValueError: if `value` is neither `0` nor `1`.
     """
-
     global _learning_phase_var
     if value not in {0, 1}:
         raise ValueError('Expected learning phase to be '
                          '0 or 1.')
     _learning_phase_var = value
+
+
+def eval(x):
+    """Evaluates the value of a variable.
+
+    # Arguments
+        x: A variable.
+
+    # Returns
+        A Numpy array.
+
+    # Examples
+    ```python
+        >>> from keras import backend as K
+        >>> kvar = K.variable(np.array([[1, 2], [3, 4]]), dtype='float32')
+        >>> K.eval(kvar)
+        array([[ 1.,  2.],
+               [ 3.,  4.]], dtype=float32)
+    ```
+    """
+    return av.Executor(get_context(), [x]).run()[0].asnumpy()

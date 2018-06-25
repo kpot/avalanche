@@ -99,7 +99,7 @@ std::string avalanche::UniformRandom::to_string() const {
 }
 
 std::string avalanche::UniformRandom::repr() const {
-    return format_repr("UniformRandom", "");
+    return format_repr("UniformRandom", "", "");
 }
 
 const std::string& UniformRandom::cached_generate_uniform_kernel_name() const {

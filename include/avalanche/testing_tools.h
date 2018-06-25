@@ -81,7 +81,7 @@ void verify_derivatives(avalanche::ContextRef context,
             variable_state[var_idx] = old_value;
         }
         var_array->write_from_vector(orig_variable_state);
-        REQUIRE(gradient_results[0]->shape().dims() == var_node->shape().dims());
+        REQUIRE(gradient_results[0]->shape().agrees_with(var_node->shape().dims()));
         require_almost_equal(finite_diff_derivative, gradient, 1e-2);
     }
 }

@@ -104,9 +104,7 @@ public:
 
     NodeRefList inputs() const override;
 
-    std::string repr() const override {
-        return format_repr("ReshapeLike", "");
-    }
+    std::string repr() const override;
 
     const NodeRef apply_chain_rule(
         const NodeRef &wrt_input,
@@ -115,13 +113,29 @@ public:
 
     bool use_in_back_propagation() const override { return true; }
 
+    /**
+     * Reshapes `input` to have the shape like `like_node`.
+     */
     static NodeRef make(const NodeRef &input, const NodeRef &like_node);
+    /**
+     * Reshapes `input` to have shape almost like `like_node`, except
+     * the dimensions listed in `dims_to_ones`, which must be made the size of 1
+     * (useful for back-propagation through reductions).
+     * If `dims_to_ones` is empty, the result will have the same rank
+     * as `like_node` with all dimensions being 1.
+     */
+    static NodeRef make(const NodeRef &input, const NodeRef &like_node,
+                        const std::vector<ShapeDim> &dims_to_ones);
 
 private:
     const NodeRef _input;
     const NodeRef _shape_node;
+    std::vector<ShapeDim> _dims_to_ones;
+    bool _replace_dims_to_ones;
 
     ReshapeLike(const NodeRef &input, const NodeRef &like_node);
+    ReshapeLike(const NodeRef &input, const NodeRef &like_node,
+                const std::vector<ShapeDim> dims_to_ones);
 };
 
 /**

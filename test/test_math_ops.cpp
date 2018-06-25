@@ -742,6 +742,38 @@ TEST_CASE("Checking automatic derivations (backprop)") {
         verify_derivatives<float>(context, {data1, data2}, output, 0.05);
     }
 
+    SECTION("Broadcasted subtraction of nodes of unknown shape") {
+        auto var1 = Variable::make("input1", {UnknownDim, UnknownDim}, ArrayType::float32);
+        auto var2 = Variable::make("input2", {UnknownDim, 3}, ArrayType::float32);
+        auto output = F<Minus>(var1, var2);
+        REQUIRE(output->shape() == Shape({UnknownDim, 3}));
+        auto context = Context::make_for_device(0);
+        context->init<float>(
+            var1,
+            {1,  2,  3,
+             4,  5,  6,
+             7,  8,  9,
+             10, 11, 12},
+            Shape({4, 3}));
+        context->init<float>(
+            var2,
+            {1,  2,  3},
+            Shape({1, 3}));
+        verify_derivatives<float>(context, {var1, var2}, output, 0.05);
+    }
+
+    SECTION("Derivatives of broadcasted multiplication of equivalient shapes") {
+        auto var1 = Variable::make("var1", {1, 5}, ArrayType::float32);
+        auto var2 = Variable::make("var2", {5}, ArrayType::float32);
+        auto output = F<Multiply>(var1, var2);
+        REQUIRE(output->shape() == Shape({1, 5}));
+        auto context = Context::make_for_device(0);
+        context->init<float>(var1, {0.0f, 1.0f, 2.0, 3.0, 4.0});
+        context->init<float>(var2, {1.0f, 2.0f, 3.0, 4.0, 5.0});
+        evaluate_and_check<float>(output, {0, 2, 6, 12, 20}, {1, 5}, context);
+        verify_derivatives<float>(context, {var1, var2}, output, 0.05);
+    }
+
     SECTION("Derivatives of MLP with softmax output") {
         auto inputs = Variable::make("inputs", {3, 3}, ArrayType::float32);
         auto weights1 = Variable::make("weights1", {3, 3}, ArrayType::float32);
@@ -929,6 +961,5 @@ TEST_CASE("Loss functions") {
             context);
         verify_derivatives<float>(context, {nn_outputs, labels}, output, 1e-2);
     }
-
 
 }

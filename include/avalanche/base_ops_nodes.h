@@ -15,6 +15,39 @@
 
 namespace avalanche {
 
+/**
+ * SFINAE trick checking if operation has `repr_extra` method
+ */
+template <typename T>
+class has_repr_extra_method
+{
+    typedef char one;
+    typedef long two;
+
+    template <typename C> static one test( typeof(&C::repr_extra) ) ;
+    template <typename C> static two test(...);
+
+public:
+    enum { value = sizeof(test<T>(0)) == sizeof(char) };
+};
+
+/**
+ * SFINAE trick calling operation`s `repr_extra` method only if it's present
+ * This allows to simplify the descriptions of the operations.
+ */
+template <typename T>
+typename std::enable_if<!has_repr_extra_method<T>::value, std::string>::type
+get_op_repr_extra(const T &a) {
+    return "";
+}
+
+template <typename T>
+typename std::enable_if<has_repr_extra_method<T>::value, std::string>::type
+get_op_repr_extra(const T &a) {
+    return a.repr_extra();
+}
+
+
 template <typename Op>
 class UnaryOp : public BaseNode {
 public:
@@ -44,7 +77,7 @@ public:
     }
 
     std::string repr() const override {
-        return format_repr(typeid(op).name(), "");
+        return format_repr(typeid(op).name(), "", get_op_repr_extra(op));
     }
 
     NodeRefList inputs() const override {
@@ -106,7 +139,7 @@ public:
     }
 
     std::string repr() const override {
-        return format_repr(typeid(op).name(), "");
+        return format_repr(typeid(op).name(), "", get_op_repr_extra(op));
     }
 
     NodeRefList inputs() const override {

@@ -478,7 +478,8 @@ PYBIND11_MODULE(pyvalanche, m) {
              py::arg_v("node", "Input tensor"),
              py::arg_v("axis", -1, "Dimension to perform on"))
         .def("reshape", &FU<Reshape, const Shape&>)
-        .def("reshape_like", &ReshapeLike::make)
+        .def("reshape_like", py::overload_cast<const NodeRef&, const NodeRef&>(&ReshapeLike::make))
+        .def("reshape_like", py::overload_cast<const NodeRef&, const NodeRef&, const ShapeDimList&>(&ReshapeLike::make))
         .def("shape", &ShapeOf::make)
         .def("expand_dims", &FU<ExpandDims, ShapeDim>)
         .def("squeeze", &FU<Squeeze, ShapeDim>)

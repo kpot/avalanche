@@ -9,6 +9,7 @@
 namespace avalanche {
 
 using ShapeDim = std::int64_t;
+using ShapeDimList = std::vector<ShapeDim>;
 constexpr ShapeDim UnknownDim = -1;
 
 struct Range {
