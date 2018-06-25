@@ -141,17 +141,18 @@ TEST_CASE("Conditional evaluation") {
     auto update1 = F<UpdateAdd>(var1, one);
     auto update2 = F<UpdateAdd>(var2, one);
     auto output = Cond::make(condition, update1, update2);
-    // Only var2 should be incremented, because condition == 0
+    INFO("Check chat only var2 should be incremented, because condition == 0");
     context->init<std::int8_t>(condition, {0});
     evaluate_and_check<float>(output, {1}, Shape(), context);
     evaluate_and_check<float>(var1, {0}, Shape(), context);
     evaluate_and_check<float>(var2, {1}, Shape(), context);
-    // Now only var1 should be incremented, because condition == 1
+    INFO("Now only var1 should be incremented, because condition == 1");
     context->init<std::int8_t>(condition, {1});
     evaluate_and_check<float>(output, {1}, Shape(), context);
     evaluate_and_check<float>(var1, {1}, Shape(), context);
     evaluate_and_check<float>(var2, {1}, Shape(), context);
-    // Again only var1 should be incremented, because condition is still == 1
+    INFO("Again only var1 should be incremented, "
+         "because condition is still == 1");
     evaluate_and_check<float>(output, {2}, Shape(), context);
     evaluate_and_check<float>(var1, {2}, Shape(), context);
     evaluate_and_check<float>(var2, {1}, Shape(), context);

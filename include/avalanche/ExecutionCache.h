@@ -21,6 +21,7 @@ public:
     explicit ExecutionCache(DeviceIndex device_idx);
     explicit ExecutionCache(BufferPoolRef buffer_pool);
     bool get_from_cache_no_counter(NodeId node_id, MultiArrayRef &result) const;
+    bool is_cached(const NodeId node_id) const;
     void zero_reuse_counters();
     void put(const NodeId node_id, const MultiArrayRef &array);
     void set_node_params(NodeId node_id,

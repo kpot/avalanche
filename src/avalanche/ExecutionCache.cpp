@@ -96,5 +96,10 @@ bool ExecutionCache::get_info(NodeId node_id, CachedItem &info) const {
     return false;
 }
 
+bool ExecutionCache::is_cached(const NodeId node_id) const {
+    auto cached = find(node_id);
+    return cached != this->end() && cached->second.data;
+}
+
 
 } // namespace

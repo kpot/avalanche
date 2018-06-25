@@ -45,6 +45,48 @@ Cond::Cond(const NodeRef &condition, const NodeRef &true_node,
     }
 }
 
+/**
+ * Makes sure all inputs of the given node have been evaluated, without
+ * evaluating the node itself, unless it has already been evaluated
+ * and cached previously. This it necessary for proper work of the Cond
+ * node by two reasons:
+ * 1. To match the behaviour of `cond` from TF, which is this (a quote):
+ *
+ *        Note that the conditional execution applies only to the operations
+ *        defined in true_fn and false_fn. Consider the following simple program:
+ *
+ *        z = tf.multiply(a, b)
+ *        result = tf.cond(x < y, lambda: tf.add(x, z), lambda: tf.square(y))
+ *
+ *        If x < y, the tf.add operation will be executed and tf.square
+ *        operation will not be executed. Since z is needed for at least
+ *        one branch of the cond, the tf.multiply operation is always executed,
+ *        unconditionally. Although this behavior is consistent with
+ *        the dataflow model of TensorFlow, it has occasionally surprised
+ *        some users who expected a lazier semantics.
+ *
+ *        https://www.tensorflow.org/api_docs/python/tf/cond
+ *
+ * 2. Such evaluation helps to make sure we don't have any values stored
+ *    in cache with counters > 0 waiting to be used during the run.
+ *    By evaluating those nodes we imitate usage of them as inputs, thus
+ *    making sure that caching works as expected.
+ */
+
+void evaluate_inputs_of(const NodeRef &node, Context &context,
+                        ExecutionCache &cache) {
+    if (cache.is_cached(node->id)) {
+        // the node (and its inputs) has already been evaluated before,
+        // because it's present in the cache. We evaluate it once more
+        // (no actual work will be done) to decrease the cache counter.
+        node->eval(context, cache);
+    } else {
+        for (const auto &inp: node->inputs()) {
+            inp->eval(context, cache);
+        }
+    }
+}
+
 MultiArrayRef Cond::eval(Context &context, ExecutionCache &cache) const {
     MultiArrayRef result;
     if (!cache.get(id, result)) {
@@ -53,8 +95,10 @@ MultiArrayRef Cond::eval(Context &context, ExecutionCache &cache) const {
         cond_value->fetch_data_into(condition);
         if (condition[0]) {
             result = _true_node->eval(context, cache);
+            evaluate_inputs_of(_false_node, context, cache);
         } else {
             result = _false_node->eval(context, cache);
+            evaluate_inputs_of(_true_node, context, cache);
         }
         cache.put(id, result);
     }
