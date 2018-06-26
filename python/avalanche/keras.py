@@ -247,9 +247,10 @@ class Function(object):
         self.executor = av.Executor(self.context, outputs, updates)
 
     def __call__(self, inputs):
-        for node, value in zip(self.placeholders, inputs):
-            self.context.init(node, value)
-        results = self.executor.run()
+        # for node, value in zip(self.placeholders, inputs):
+        #     self.context.init(node, value)
+        fill_cache_with = dict(zip(self.placeholders, inputs))
+        results = self.executor.run(fill_cache_with)
         return [r.asnumpy() for r in results]
 
 
@@ -1271,7 +1272,7 @@ def learning_phase():
     """
     global _learning_phase_var
     if _learning_phase_var is None:
-        _learning_phase_var = av.variable(
+        _learning_phase_var = av.placeholder_with_initializer(
             'keras_learning_phase', [], av.ArrayType.int8,
             av.value_initializer(np.array(0, dtype='int8')))
     return _learning_phase_var

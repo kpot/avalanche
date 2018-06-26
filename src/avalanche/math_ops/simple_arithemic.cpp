@@ -41,7 +41,7 @@ Minus::apply_chain_rule(const NodeRef &wrt_input,
         derivative = F<ReduceSum>(d_target_wrt_this, F<NoBackProp>(wrt_input), true);
     } else if (all_inputs[1] == wrt_input) {
         // with respect to right_operand
-        derivative = FU<Negate>(F<ReduceSum>(d_target_wrt_this, F<NoBackProp>(wrt_input), true));
+        derivative = F<ReduceSum>(F<Negate>(d_target_wrt_this), F<NoBackProp>(wrt_input), true);
     } else {
         throw std::logic_error(messages::CANT_DIFF_UNEXISTING_INPUT_MESSAGE);
     }
@@ -85,8 +85,8 @@ const NodeRef Divide::apply_chain_rule(const NodeRef &wrt_input,
         // with respect to right_operand
         auto part_derivative = F<Multiply>(
             d_target_wrt_this,
-            F<Divide>(F<Negate>(all_inputs[0]),
-                      F<Multiply>(all_inputs[1], all_inputs[1])));
+            F<Negate>(F<Divide>(all_inputs[0],
+                                F<Square>(all_inputs[1]))));
         derivative = F<ReduceSum>(part_derivative, F<NoBackProp>(wrt_input), true);
     } else {
         throw std::logic_error(messages::CANT_DIFF_UNEXISTING_INPUT_MESSAGE);

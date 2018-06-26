@@ -73,18 +73,9 @@ Cond::Cond(const NodeRef &condition, const NodeRef &true_node,
  *    making sure that caching works as expected.
  */
 
-void evaluate_inputs_of(const NodeRef &node, Context &context,
-                        ExecutionCache &cache) {
-    if (cache.is_cached(node->id)) {
-        // the node (and its inputs) has already been evaluated before,
-        // because it's present in the cache. We evaluate it once more
-        // (no actual work will be done) to decrease the cache counter.
-        node->eval(context, cache);
-    } else {
-        for (const auto &inp: node->inputs()) {
-            inp->eval(context, cache);
-        }
-    }
+void handle_not_evaluated_node(const NodeRef &node, Context &context,
+                               ExecutionCache &cache) {
+    cache.decrease_counter(node->id);
 }
 
 MultiArrayRef Cond::eval(Context &context, ExecutionCache &cache) const {
@@ -95,10 +86,10 @@ MultiArrayRef Cond::eval(Context &context, ExecutionCache &cache) const {
         cond_value->fetch_data_into(condition);
         if (condition[0]) {
             result = _true_node->eval(context, cache);
-            evaluate_inputs_of(_false_node, context, cache);
+            handle_not_evaluated_node(_false_node, context, cache);
         } else {
             result = _false_node->eval(context, cache);
-            evaluate_inputs_of(_true_node, context, cache);
+            handle_not_evaluated_node(_true_node, context, cache);
         }
         cache.put(id, result);
     }

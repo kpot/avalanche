@@ -40,20 +40,22 @@ const NodeRef Constant::fill(Shape shape, ArrayType dtype, float value) {
         throw std::invalid_argument("The shape must be fully defined");
     }
     Initializer initializer{
-        [shape, dtype, value](Context &context, ExecutionCache &cache) {
+        [shape, dtype, value](Context &context, ExecutionCache &cache,
+                              ArrayRefList &dependencies) {
             auto result = context.device_pool()->make_array(shape, dtype);
             auto queue = result->buffer_unsafe()->pool()->cl_queue();
             fill_array_switch(dtype, queue, result, value);
             return result;
         },
         nullptr,
-        dtype
+        dtype,
+        {}
     };
     return std::static_pointer_cast<BaseNode>(
         std::make_shared<Constant>(
             (std::string("Fill ") + shape.to_string() +
                 " with " + std::to_string(value)),
-            initializer, shape, dtype, NodeRefList()));
+            initializer, shape, dtype));
 }
 
 template <typename T>
@@ -77,7 +79,7 @@ MultiArrayRef Constant::eval(Context &context, ExecutionCache &cache) const {
     if (!cache.get(id, cached_value)) {
         // We haven't checked this constant during this run
         ArrayRefList cached_deps;
-        for (const auto &dep: _dependencies) {
+        for (const auto &dep: _initializer.dependencies) {
             cached_deps.emplace_back(dep->eval(context, cache));
         }
         if (context.get(id, cached_value)) {
@@ -86,13 +88,13 @@ MultiArrayRef Constant::eval(Context &context, ExecutionCache &cache) const {
                 if (!_initializer.is_cache_valid(cached_value,
                                                  cached_deps)) {
                     // ... but the constant is outdated now
-                    cached_value = _initializer.code(context, cache);
+                    cached_value = _initializer.code(context, cache, cached_deps);
                     context.init(id, cached_value);
                 }
             }
         } else {
             // It's the first time we met this constant
-            cached_value = _initializer.code(context, cache);
+            cached_value = _initializer.code(context, cache, cached_deps);
             context.init(id, cached_value);
         }
         // We store the constant in the ExecutionCache so we would not need
@@ -112,7 +114,8 @@ Constant::tensor(const std::string &name,
     std::memcpy(copy_of_data.data(), data, num_bytes);
     Initializer initializer {
         [shape, copy_of_data, dtype](Context &context,
-                                     ExecutionCache &cache) -> MultiArrayRef {
+                                     ExecutionCache &cache,
+                                     ArrayRefList &dependencies) {
             auto result = context.device_pool()->make_array(shape, dtype);
             // write_from_vector will update the result's completion event
             result->buffer_unsafe()->write_from_vector(copy_of_data, 0);
@@ -121,16 +124,14 @@ Constant::tensor(const std::string &name,
         nullptr,
         dtype
     };
-    return std::make_shared<Constant>(
-        name,
-        initializer,
-        shape,
-        dtype, NodeRefList());
+    return std::static_pointer_cast<BaseNode>(
+        std::make_shared<Constant>(name, initializer, shape, dtype));
 }
 
 const NodeRef Constant::fill_shape(const avalanche::NodeRef &shape_node,
                                    ArrayType dtype,
                                    float value) {
+    auto shape_node_wrapped = F<NoBackProp>(shape_node);
     if (shape_node->dtype() != ShapeOf::DType) {
         throw std::invalid_argument(
             fmt::format("Given node has data type {} while {} is required",
@@ -145,8 +146,9 @@ const NodeRef Constant::fill_shape(const avalanche::NodeRef &shape_node,
                 shape_node->shape().rank()));
     }
     Initializer initializer{
-        [shape_node, value, dtype](Context &context, ExecutionCache &cache) {
-            auto shape_array = shape_node->eval(context, cache);
+        [value, dtype](Context &context, ExecutionCache &cache,
+                       ArrayRefList &dependencies) {
+            auto shape_array = dependencies[0];
             std::vector<ShapeDim> shape_dims;
             shape_array->fetch_data_into(shape_dims);
 
@@ -162,18 +164,18 @@ const NodeRef Constant::fill_shape(const avalanche::NodeRef &shape_node,
             shape->fetch_data_into(shape_dims);
             return cached_value->shape().dims() == shape_dims;
         },
-        dtype
+        dtype,
+        {shape_node_wrapped}
     };
     // We don't know the shape at this stage, but we know it's rank at least
     std::vector<ShapeDim> proto_dims(
         static_cast<std::size_t>(
             shape_node->shape().rank() == 1 ? shape_node->shape().dim(0) : 0));
     std::fill(proto_dims.begin(), proto_dims.end(), UnknownDim);
-    NodeRefList dependencies({F<NoBackProp>(shape_node)});
     return std::static_pointer_cast<BaseNode>(
         std::make_shared<Constant>(
             fmt::format("Fill shape {} with {}", shape_node->repr(), value),
-            initializer, proto_dims, dtype, dependencies));
+            initializer, proto_dims, dtype));
 }
 
 const NodeRef Constant::fill_like(const NodeRef &other_node, float value) {
@@ -181,11 +183,14 @@ const NodeRef Constant::fill_like(const NodeRef &other_node, float value) {
 }
 
 const NodeRef
-Constant::fill_like_with_type(const NodeRef &other_node, ArrayType dtype,
+Constant::fill_like_with_type(const NodeRef &other_node,
+                              ArrayType dtype,
                               float value) {
+    auto other_node_wrapped = F<NoBackProp>(other_node);
     Initializer initializer {
-        [value, other_node, dtype](Context &context, ExecutionCache &cache) {
-            auto real_value = other_node->eval(context, cache);
+        [value, dtype](Context &context, ExecutionCache &cache,
+                       ArrayRefList &dependencies) {
+            auto real_value = dependencies[0];
             auto result = context.device_pool()->make_array(
                 real_value->shape(), dtype);
             auto queue = result->buffer_unsafe()->pool()->cl_queue();
@@ -196,15 +201,14 @@ Constant::fill_like_with_type(const NodeRef &other_node, ArrayType dtype,
         [](const MultiArrayRef &cached_value, const ArrayRefList &dependencies) {
             return cached_value->shape() == dependencies[0]->shape();
         },
-        dtype
+        dtype,
+        {other_node_wrapped}
     };
     return std::static_pointer_cast<BaseNode>(
         std::make_shared<Constant>(
             fmt::format("Fill shape like {} with {}",
                         other_node->repr(), value),
-            initializer, other_node->shape(),
-            dtype,
-            NodeRefList({F<NoBackProp>(other_node)})));
+            initializer, other_node->shape(), dtype));
 }
 
 const NodeRef
@@ -221,7 +225,11 @@ MultiArrayRef Variable::eval(Context &context, ExecutionCache &cache) const {
     MultiArrayRef cached_value;
     if (!context.get(id, cached_value)) {
         if (_initializer) {
-            cached_value = _initializer.code(context, cache);
+            ArrayRefList cached_deps;
+            for (const auto &dep: _initializer.dependencies) {
+                cached_deps.emplace_back(std::move(dep->eval(context, cache)));
+            }
+            cached_value = _initializer.code(context, cache, cached_deps);
             check_compatibility(this, cached_value);
             cached_value->set_label(to_string());
             context.init(id, cached_value);
@@ -267,18 +275,59 @@ Variable::make(const std::string &name, const std::vector<ShapeDim> &shape_dims,
 Initializer node_initializer(const NodeRef &node) {
     if (node) {
         Initializer initializer {
-            [node](Context &context,
-                   ExecutionCache &cache) {
+            [](Context &context, ExecutionCache &cache,
+               ArrayRefList &dependencies) {
                 // the values used for initialization are not cached, just like in
                 // TF where initialization is a separate step. Doing it otherwise
                 // (with caching) would have greatly complicated everything.
-                return node->eval(context, cache);
+                return dependencies[0];
             },
             nullptr,
-            node->dtype()
+            node->dtype(),
+            {F<NoBackProp>(node)}
         };
         return initializer;
     }
     return Initializer{};
+}
+
+NodeRef Placeholder::make(const std::string &name,
+                          const std::vector<ShapeDim> &shape_dims,
+                          ArrayType dtype, Initializer initializer) {
+    if (initializer) {
+        if (dtype != initializer.dtype)  {
+            throw std::invalid_argument(
+                fmt::format(
+                    "Given initializer's type ({}) is incompatible "
+                    "with the placeholder's type {}",
+                    array_type_name(initializer.dtype), array_type_name(dtype)));
+        }
+    }
+    auto *raw_ptr = new Placeholder(
+        name, std::move(initializer), Shape(shape_dims), dtype);
+    return std::static_pointer_cast<BaseNode>(
+        std::shared_ptr<Placeholder>(raw_ptr));
+}
+
+MultiArrayRef Placeholder::eval(Context &context, ExecutionCache &cache) const {
+    MultiArrayRef cached_value;
+    if (!cache.get(id, cached_value)) {
+        if (_initializer) {
+            ArrayRefList cached_deps;
+            for (const auto &dep: _initializer.dependencies) {
+                cached_deps.emplace_back(std::move(dep->eval(context, cache)));
+            }
+            cached_value = _initializer.code(context, cache, cached_deps);
+            check_compatibility(this, cached_value);
+            cached_value->set_label(to_string());
+            cache.put(id, cached_value);
+        } else {
+            throw std::runtime_error(
+                fmt::format(
+                    "Can't find an initial value for a placeholder <{}>",
+                    name));
+        }
+    }
+    return cached_value;
 }
 } // namespace

@@ -47,16 +47,18 @@ public:
             _cache.set_node_params(
                 item.first->id,
                 item.second.size() + (is_output_node ? 1 : 0),
-                0);
+                0,
+                item.second);
         }
     }
 
-    std::vector<MultiArrayRef> run() {
+    std::vector<MultiArrayRef> run(const NodeValueMap &pre_cache_map = {}) {
         std::vector<MultiArrayRef> results;
         std::vector<MultiArrayRef> update_results;
         // just in case we zero the counters. Although in theory
         // if the previous run had not failed, all counters must already be 0
         _cache.zero_reuse_counters();
+        _cache.put_all(pre_cache_map);
         for (auto &target: _result_nodes) {
             auto result = target->eval(*_context, _cache);
             results.emplace_back(std::move(result));
@@ -77,6 +79,7 @@ public:
 
     const NodeRefList& result_nodes() { return _result_nodes; }
 
+    ContextRef& context() { return _context; }
 
 private:
     ContextRef _context;

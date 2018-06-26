@@ -12,7 +12,8 @@
 namespace avalanche {
 
 using InitializerFunc = std::function<
-    MultiArrayRef(Context &context, ExecutionCache &cache)>;
+    MultiArrayRef(Context &context, ExecutionCache &cache,
+                  ArrayRefList &dependencies)>;
 using InitializerValidityCheck = std::function<
     bool(const MultiArrayRef &cached_value, const ArrayRefList &dependencies)>;
 
@@ -32,6 +33,7 @@ struct Initializer {
     // The type of values the cache generates. Helps in validating initializers
     // before the first use
     ArrayType dtype = ArrayType::int8;
+    NodeRefList dependencies;
 
     explicit operator bool() const {
         return static_cast<bool>(code);
@@ -52,7 +54,8 @@ Initializer value_initializer(
         const std::vector<T> &data,
         const Shape &shape) {
     Initializer initializer{
-        [data, shape](Context &context, ExecutionCache &cache) {
+        [data, shape](Context &context, ExecutionCache &cache,
+                      ArrayRefList &dependencies) {
             auto result = context.device_pool()->make_array(
                 shape,
                 dtype_of_static_type<T>);
@@ -60,7 +63,8 @@ Initializer value_initializer(
             return result;
         },
         nullptr,
-        dtype_of_static_type<T>
+        dtype_of_static_type<T>,
+        {}
     };
     return initializer;
 }
@@ -107,7 +111,7 @@ public:
     }
 
     NodeRefList inputs() const override {
-        return NodeRefList();
+        return _initializer ? _initializer.dependencies : NodeRefList();
     }
 
     const NodeRef
@@ -124,12 +128,14 @@ public:
                         ArrayType dtype=ArrayType::float32,
                         Initializer initializer={});
 
-private:
+protected:
     Initializer _initializer;
 
     explicit Variable(std::string name, Initializer initializer,
-                      const Shape &shape, ArrayType dtype=ArrayType::float32)
-        :name{std::move(name)}, _initializer{std::move(initializer)}
+                      const Shape &shape,
+                      ArrayType dtype)
+        :name{std::move(name)},
+         _initializer{std::move(initializer)}
     {
         set_shape(shape);
         set_dtype(dtype);
@@ -137,15 +143,35 @@ private:
 };
 
 
+class Placeholder : public Variable {
+public:
+
+    explicit Placeholder(std::string name,
+                         Initializer initializer,
+                         const Shape &shape,
+                         ArrayType dtype)
+                             :Variable(name, initializer, shape, dtype) {}
+
+    static NodeRef make(const std::string &name,
+                        const std::vector<ShapeDim> &shape_dims,
+                        ArrayType dtype=ArrayType::float32,
+                        Initializer initializer={});
+
+    std::string repr() const override {
+        return format_repr("Placeholder", name, "");
+    }
+
+    MultiArrayRef eval(Context &context, ExecutionCache &cache) const override;
+};
+
+
 class Constant : public BaseNode {
 public:
 
     explicit Constant(std::string name, Initializer initializer,
-                      Shape shape, ArrayType dtype,
-                      const NodeRefList &dependencies)
+                      Shape shape, ArrayType dtype)
         :_initializer{initializer},
-         _name{name},
-         _dependencies{dependencies}
+         _name{name}
     {
         set_dtype(dtype);
         set_shape(shape);
@@ -162,7 +188,7 @@ public:
     }
 
     NodeRefList inputs() const override {
-        return _dependencies;
+        return _initializer ? _initializer.dependencies : NodeRefList();
     }
 
     const NodeRef
@@ -243,7 +269,6 @@ public:
 private:
     Initializer _initializer;
     std::string _name;
-    NodeRefList _dependencies;
 };
 
 

@@ -788,8 +788,9 @@ ShapeOf::ShapeOf(const NodeRef &input)
     :Constant(
     "Shape of " + input->repr(),
     Initializer{
-        [input](Context &context, ExecutionCache &cache) {
-            auto value = input->eval(context, cache);
+        [](Context &context, ExecutionCache &cache,
+           ArrayRefList &dependencies) {
+            auto value = dependencies[0];
             auto pool = value->buffer_unsafe()->pool();
             auto array = pool->make_array(
                 Shape({static_cast<ShapeDim>(value->shape().rank())}),
@@ -808,11 +809,11 @@ ShapeOf::ShapeOf(const NodeRef &input)
             auto dims_from_metadata = extract_shape_from_metadata(cached_value);
             return dims_from_metadata == dependencies[0]->shape().dims();
         },
-        DType
+        DType,
+        {F<NoBackProp>(input)}
     },
     {static_cast<ShapeDim>(input->shape().rank())},
-    DType,
-    {F<NoBackProp>(input)})
+    DType)
 {
 }
 

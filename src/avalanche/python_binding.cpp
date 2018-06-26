@@ -191,6 +191,22 @@ py::array array_to_numpy_template(MultiArrayRef &array) {
 ARRAY_DTYPE_SWITCH_FUNCTION(array_to_numpy_switch, array_to_numpy_template, py::array,)
 
 
+template <typename T>
+MultiArrayRef numpy_array_to_multi_array(
+        BufferPoolRef pool,
+        py::array_t<T, py::array::c_style | py::array::forcecast> array) {
+    py::buffer_info info = array.request(false);
+    Shape shape(convert_shape_to_avalanche(info.shape));
+    auto result = pool->make_array(shape, dtype_of_static_type<T>);
+    auto writing_is_done = result->buffer_when_ready()->write_data(
+        info.ptr, static_cast<std::size_t>(info.size * info.itemsize),
+        0);
+    return result;
+}
+
+ARRAY_DTYPE_SWITCH_FUNCTION(numpy_to_multi_array_switch, numpy_array_to_multi_array, MultiArrayRef,)
+
+
 py::array array_to_numpy(MultiArrayRef &array) {
     ArrayType required_dtype = array->dtype();
     return array_to_numpy_switch(required_dtype, array);
@@ -199,7 +215,8 @@ py::array array_to_numpy(MultiArrayRef &array) {
 
 Initializer numpy_value_initializer(py::array value) {
     Initializer initializer = {
-        [value](Context &context, ExecutionCache &cache) mutable {
+        [value](Context &context, ExecutionCache &cache,
+                ArrayRefList &dependencies) mutable {
             py::buffer_info info = value.request(false);
             if (!(value.flags() & py::array::c_style)) {
                 throw std::invalid_argument(
@@ -215,7 +232,8 @@ Initializer numpy_value_initializer(py::array value) {
             return result;
         },
         nullptr,
-        dtype_to_avalanche_array_type(value.dtype())
+        dtype_to_avalanche_array_type(value.dtype()),
+        {}
     };
     return initializer;
 }
@@ -234,12 +252,6 @@ NodeRef make_constant_from_numpy(py::array value, const std::string &name) {
         static_cast<std::size_t>(info.size * info.itemsize),
         array_type,
         shape);
-}
-
-NodeRef placeholder(const std::string &name,
-                    const std::vector<ShapeDim> &shape_dims,
-                    ArrayType dtype) {
-    return Variable::make(name, shape_dims, dtype);
 }
 
 
@@ -308,6 +320,7 @@ PYBIND11_MODULE(pyvalanche, m) {
         }))
         .def("__str__", &BaseNode::to_string)
         .def("__repr__", &BaseNode::repr)
+        .def("tree_repr", &BaseNode::tree_repr)
         .def("inputs", &BaseNode::inputs)
         .def_property_readonly("dtype", &BaseNode::dtype)
         .def_property_readonly("shape", &BaseNode::shape)
@@ -364,7 +377,34 @@ PYBIND11_MODULE(pyvalanche, m) {
     py::class_<Executor>(m, "Executor")
         .def(py::init<const ContextRef&, const NodeRefList&>())
         .def(py::init<const ContextRef&, const NodeRefList&, const NodeRefList&>())
-        .def("run", &Executor::run);
+//        .def("run", &Executor::run)
+        .def("run", [](Executor &executor, py::dict cache_initial_values) {
+            NodeValueMap node_value_map;
+            for (auto &item: cache_initial_values) {
+                if (!py::isinstance<BaseNode>(item.first)) {
+                    throw std::invalid_argument("Only nodes can be the keys");
+                }
+                auto node = item.first.cast<NodeRef>();
+                if (py::isinstance<py::array>(item.second)
+                        || py::isinstance<py::list>(item.second)
+                        || py::isinstance<py::float_>(item.second)
+                        || py::isinstance<py::int_>(item.second)) {
+                    auto gpu_array = numpy_to_multi_array_switch(
+                        node->dtype(),
+                        executor.context()->device_pool(),
+                        item.second.cast<py::array>());
+                    node_value_map[node] = gpu_array;
+                    gpu_array->wait_until_ready();
+                } else if (py::isinstance<MultiArray>(item.second)) {
+                    node_value_map[node] = item.second.cast<MultiArrayRef>();
+                } else {
+                    throw std::invalid_argument(
+                        "Only scalars, numpy arrays or MultiArrays are allowed"
+                        "as values");
+                }
+            }
+            return executor.run(node_value_map);
+        });
 
     py::class_<DeviceInfo>(m, "DeviceInfo")
         .def_readwrite("name", &DeviceInfo::name)
@@ -388,9 +428,19 @@ PYBIND11_MODULE(pyvalanche, m) {
           py::arg("name"), py::arg("shape_dims"), py::arg("dtype"),
           py::arg("initializer"));
     m.def("placeholder",
-          &placeholder,
-          "Creates a new variable without initialization",
-          py::arg("name"), py::arg("shape_dims"), py::arg("dtype"));
+          [](const std::string &name,
+             const ShapeDimList &shape_dims,
+             ArrayType dtype) {
+              return Placeholder::make(name, shape_dims, dtype);
+          },
+          "Creates a new placeholder");
+    m.def("placeholder_with_initializer",
+          py::overload_cast<
+              const std::string&,
+              const ShapeDimList&,
+              ArrayType,
+              Initializer>(&Placeholder::make),
+          "Creates a new placeholder with a default initalizer");
 
     m.def("variable_from_node",
           &Variable::make_from_node,

@@ -26,7 +26,7 @@ std::string avalanche::BaseNode::tree_repr() {
 }
 
 void avalanche::BaseNode::_tree_repr_body(int depth, std::ostringstream &out) {
-    for (int i = 0; i < 3 * depth; ++i) out << "|";
+    for (int i = 0; i < 3 * depth; ++i) out << " ";
     if (depth > 0) out << "|-";
     out << repr() << "\n";
     for (const auto &node: inputs()) {
