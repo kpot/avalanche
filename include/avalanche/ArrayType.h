@@ -26,21 +26,21 @@ const char ArrayTypeVerboseNames[][9] = {
 const std::size_t ArrayTypeSizes[] = {
     sizeof(cl_half), sizeof(cl_float), sizeof(cl_double), 1, 2, 4, 8};
 
-template<class T> constexpr ArrayType dtype_of_static_type = ArrayType::int8;
-template<> constexpr ArrayType dtype_of_static_type<cl_short> = ArrayType::int16;
-template<> constexpr ArrayType dtype_of_static_type<cl_int> = ArrayType::int32;
-template<> constexpr ArrayType dtype_of_static_type<cl_long> = ArrayType::int64;
-template<> constexpr ArrayType dtype_of_static_type<cl_half> = ArrayType::float16;
-template<> constexpr ArrayType dtype_of_static_type<float> = ArrayType::float32;
-template<> constexpr ArrayType dtype_of_static_type<double> = ArrayType::float64;
+template<class T> constexpr static ArrayType dtype_of_static_type = ArrayType::int8;
+template<> constexpr static ArrayType dtype_of_static_type<cl_short> = ArrayType::int16;
+template<> constexpr static ArrayType dtype_of_static_type<cl_int> = ArrayType::int32;
+template<> constexpr static ArrayType dtype_of_static_type<cl_long> = ArrayType::int64;
+template<> constexpr static ArrayType dtype_of_static_type<cl_half> = ArrayType::float16;
+template<> constexpr static ArrayType dtype_of_static_type<float> = ArrayType::float32;
+template<> constexpr static ArrayType dtype_of_static_type<double> = ArrayType::float64;
 
-template<class T> constexpr char cl_type_name_of_static_type[] = "char";
-template<> constexpr char cl_type_name_of_static_type<cl_short>[] = "short";
-template<> constexpr char cl_type_name_of_static_type<cl_int>[] = "int";
-template<> constexpr char cl_type_name_of_static_type<cl_long>[] = "long";
-template<> constexpr char cl_type_name_of_static_type<cl_half>[] = "half";
-template<> constexpr char cl_type_name_of_static_type<float>[] = "float";
-template<> constexpr char cl_type_name_of_static_type<double>[] = "double";
+template<class T> constexpr static char cl_type_name_of_static_type[] = "char";
+template<> constexpr static char cl_type_name_of_static_type<cl_short>[] = "short";
+template<> constexpr static char cl_type_name_of_static_type<cl_int>[] = "int";
+template<> constexpr static char cl_type_name_of_static_type<cl_long>[] = "long";
+template<> constexpr static char cl_type_name_of_static_type<cl_half>[] = "half";
+template<> constexpr static char cl_type_name_of_static_type<float>[] = "float";
+template<> constexpr static char cl_type_name_of_static_type<double>[] = "double";
 
 inline const char *cl_type_name_of_array(ArrayType t) {
     if (static_cast<int>(t) >=
